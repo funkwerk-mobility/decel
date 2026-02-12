@@ -7,11 +7,6 @@
   handling in the parser (don't evaluate the argument, just check if the
   field/key exists). Current implementation throws "not yet implemented".
 
-- **Short-circuit + error propagation**: CEL spec says `false && error`
-  should produce `false`, not propagate the error. Implemented via
-  skip-mode parsing: when short-circuiting, the parser advances through
-  tokens without evaluating, so no errors can be thrown from the RHS.
-
 - **Deep equality for `in` on lists**: The `in` operator on lists needs
   to compare Values for equality, which requires implementing `opEquals`
   on `Value`. Currently always returns `false` for list membership.
@@ -33,6 +28,10 @@
 ## Architecture Notes
 
 - Single-pass tokenize → evaluate. No AST.
-- `EvalException` for all parse/eval errors with source position.
+- Error values (`Value.err`) for evaluation errors (division by zero,
+  type mismatches, missing keys). Errors propagate through operators
+  and are naturally absorbed by short-circuit `&&` and `||`.
+- `EvalException` only for parse/syntax errors (unexpected token, etc.).
 - Pratt parsing for operator precedence.
-- Short-circuit `&&` and `||`.
+- Short-circuit `&&` and `||` — both sides are always parsed, but
+  `false && err` → `false` and `true || err` → `true`.

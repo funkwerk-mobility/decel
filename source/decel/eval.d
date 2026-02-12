@@ -3,6 +3,14 @@
  +
  + Tokenizes and evaluates a CEL expression in one pass, producing a Value.
  + Uses Pratt parsing for correct operator precedence.
+ +
+ + Evaluation errors (division by zero, type mismatches) are represented as
+ + Value.err rather than exceptions. This enables natural short-circuit
+ + semantics: `false && (1/0 == 1)` evaluates to `false` because `&&`
+ + absorbs the error on the right when the left is already false.
+ +
+ + Parse errors (syntax errors, unexpected tokens) still throw EvalException
+ + since the parser cannot continue.
  +/
 module decel.eval;
 
@@ -49,20 +57,12 @@ private struct Parser
     Token[] tokens;
     Context ctx;
     size_t pos;
-    int skipDepth; /// When > 0, parse but don't evaluate (for short-circuit).
 
     this(Token[] tokens, Context ctx)
     {
         this.tokens = tokens;
         this.ctx = ctx;
         this.pos = 0;
-        this.skipDepth = 0;
-    }
-
-    /// Whether we're in skip mode (parsing without evaluating).
-    bool skipping() const
-    {
-        return skipDepth > 0;
     }
 
     /// Current token.
@@ -119,16 +119,7 @@ private struct Parser
             if (tok.kind == Token.Kind.question)
             {
                 advance();
-                if (skipping)
-                {
-                    parseExpr(0);
-                    expect(Token.Kind.colon);
-                    parseExpr(0);
-                }
-                else
-                {
-                    lhs = parseTernary(lhs);
-                }
+                lhs = parseTernary(lhs);
                 continue;
             }
 
@@ -137,8 +128,7 @@ private struct Parser
             {
                 advance();
                 auto rhs = parseExpr(prec + 1);
-                if (!skipping)
-                    lhs = evalIn(lhs, rhs, tok.pos);
+                lhs = evalIn(lhs, rhs);
                 continue;
             }
 
@@ -154,13 +144,11 @@ private struct Parser
                     advance();
                     auto args = parseArgList();
                     expect(Token.Kind.rparen);
-                    if (!skipping)
-                        lhs = evalMethod(lhs, ident.text, args, ident.pos);
+                    lhs = evalMethod(lhs, ident.text, args);
                 }
                 else
                 {
-                    if (!skipping)
-                        lhs = evalMember(lhs, ident.text, ident.pos);
+                    lhs = evalMember(lhs, ident.text);
                 }
                 continue;
             }
@@ -171,53 +159,39 @@ private struct Parser
                 advance();
                 auto index = parseExpr(0);
                 expect(Token.Kind.rbracket);
-                if (!skipping)
-                    lhs = evalIndex(lhs, index, tok.pos);
+                lhs = evalIndex(lhs, index);
                 continue;
             }
 
             // Binary operator
             advance();
-            // Logical && and || use skip-mode for short-circuit.
-            // We can't use try/catch here because catching an exception
-            // from a recursive-descent parser leaves the token position
-            // corrupted — the throwing sub-expression is only partially
-            // consumed, so subsequent parsing sees leftover tokens.
-            // Skip-mode advances through all tokens without evaluating.
+
+            // Short-circuit: && and ||
+            // Both sides are always fully parsed. Error values propagate
+            // naturally: false && err → false, true || err → true.
             if (tok.kind == Token.Kind.ampAmp)
             {
+                auto rhs = parseExpr(prec + 1);
+                // false && <anything> → false (absorb RHS errors)
                 if (isFalsy(lhs))
-                {
-                    skipDepth++;
-                    parseExpr(prec + 1);
-                    skipDepth--;
-                    // lhs stays falsy
-                }
-                else
-                {
-                    lhs = parseExpr(prec + 1);
-                }
+                    continue; // lhs stays as-is (false)
+                // true && rhs → rhs
+                lhs = rhs;
                 continue;
             }
             if (tok.kind == Token.Kind.pipePipe)
             {
+                auto rhs = parseExpr(prec + 1);
+                // true || <anything> → true (absorb RHS errors)
                 if (isTruthy(lhs))
-                {
-                    skipDepth++;
-                    parseExpr(prec + 1);
-                    skipDepth--;
-                    // lhs stays truthy
-                }
-                else
-                {
-                    lhs = parseExpr(prec + 1);
-                }
+                    continue; // lhs stays as-is (true)
+                // false || rhs → rhs
+                lhs = rhs;
                 continue;
             }
 
             auto rhs = parseExpr(prec + 1);
-            if (!skipping)
-                lhs = evalBinary(tok.kind, lhs, rhs, tok.pos);
+            lhs = evalBinary(tok.kind, lhs, rhs);
         }
 
         return lhs;
@@ -233,9 +207,7 @@ private struct Parser
         {
             advance();
             auto operand = parseUnary();
-            if (skipping)
-                return Value.null_();
-            return evalUnaryMinus(operand, tok.pos);
+            return evalUnaryMinus(operand);
         }
 
         // Logical not
@@ -243,9 +215,7 @@ private struct Parser
         {
             advance();
             auto operand = parseUnary();
-            if (skipping)
-                return Value.null_();
-            return evalUnaryNot(operand, tok.pos);
+            return evalUnaryNot(operand);
         }
 
         return parseAtom();
@@ -298,13 +268,9 @@ private struct Parser
                 advance();
                 auto args = parseArgList();
                 expect(Token.Kind.rparen);
-                if (skipping)
-                    return Value.null_();
                 return evalFunction(tok.text, args, tok.pos);
             }
             // Variable lookup
-            if (skipping)
-                return Value.null_();
             return ctx(tok.text);
 
         case Token.Kind.lparen:
@@ -332,6 +298,9 @@ private struct Parser
         auto thenVal = parseExpr(0);
         expect(Token.Kind.colon);
         auto elseVal = parseExpr(0);
+        // Error in condition propagates
+        if (cond.type == Value.Type.err)
+            return cond;
         return isTruthy(cond) ? thenVal : elseVal;
     }
 
@@ -395,9 +364,6 @@ private struct Parser
         expect(Token.Kind.colon);
         auto valExpr = parseExpr(0);
 
-        if (skipping)
-            return;
-
         // Extract string key — use match directly to avoid const issues
         string keyStr = keyVal.inner.match!((ref string s) => s, (ref _) => null,);
         if (keyStr is null)
@@ -445,8 +411,20 @@ private int infixPrec(Token.Kind kind)
 
 // ── Evaluation helpers ──────────────────────────────────────────────
 
-private Value evalBinary(Token.Kind op, Value lhs, Value rhs, size_t pos)
+/// Check if a Value is an error, propagating it if so.
+private bool isErr(Value v)
 {
+    return v.type == Value.Type.err;
+}
+
+private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
+{
+    // Propagate errors
+    if (isErr(lhs))
+        return lhs;
+    if (isErr(rhs))
+        return rhs;
+
     // Arithmetic: int × int
     auto li = tryGet!long(lhs);
     auto ri = tryGet!long(rhs);
@@ -462,11 +440,11 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs, size_t pos)
             return Value(li.get * ri.get);
         case Token.Kind.slash:
             if (ri.get == 0)
-                throw new EvalException("division by zero", pos);
+                return Value.err("division by zero");
             return Value(li.get / ri.get);
         case Token.Kind.percent:
             if (ri.get == 0)
-                throw new EvalException("modulo by zero", pos);
+                return Value.err("modulo by zero");
             return Value(li.get % ri.get);
         case Token.Kind.eqEq:
             return Value(li.get == ri.get);
@@ -500,11 +478,11 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs, size_t pos)
             return Value(lu.get * ru.get);
         case Token.Kind.slash:
             if (ru.get == 0)
-                throw new EvalException("division by zero", pos);
+                return Value.err("division by zero");
             return Value(lu.get / ru.get);
         case Token.Kind.percent:
             if (ru.get == 0)
-                throw new EvalException("modulo by zero", pos);
+                return Value.err("modulo by zero");
             return Value(lu.get % ru.get);
         case Token.Kind.eqEq:
             return Value(lu.get == ru.get);
@@ -608,12 +586,14 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs, size_t pos)
             return Value(ll.get ~ rl.get);
     }
 
-    throw new EvalException("unsupported operator " ~ kindName(
-            op) ~ " for types " ~ typeName(lhs) ~ " and " ~ typeName(rhs), pos);
+    return Value.err("unsupported operator " ~ kindName(
+            op) ~ " for types " ~ typeName(lhs) ~ " and " ~ typeName(rhs));
 }
 
-private Value evalUnaryMinus(Value operand, size_t pos)
+private Value evalUnaryMinus(Value operand)
 {
+    if (isErr(operand))
+        return operand;
     auto i = tryGet!long(operand);
     if (!i.isNull)
         return Value(-i.get);
@@ -623,19 +603,26 @@ private Value evalUnaryMinus(Value operand, size_t pos)
     auto d = tryGet!double(operand);
     if (!d.isNull)
         return Value(-d.get);
-    throw new EvalException("cannot negate " ~ typeName(operand), pos);
+    return Value.err("cannot negate " ~ typeName(operand));
 }
 
-private Value evalUnaryNot(Value operand, size_t pos)
+private Value evalUnaryNot(Value operand)
 {
+    if (isErr(operand))
+        return operand;
     auto b = tryGet!bool(operand);
     if (!b.isNull)
         return Value(!b.get);
-    throw new EvalException("cannot apply ! to " ~ typeName(operand), pos);
+    return Value.err("cannot apply ! to " ~ typeName(operand));
 }
 
-private Value evalIn(Value lhs, Value rhs, size_t pos)
+private Value evalIn(Value lhs, Value rhs)
 {
+    if (isErr(lhs))
+        return lhs;
+    if (isErr(rhs))
+        return rhs;
+
     // String contains
     auto ls = tryGet!string(lhs);
     auto rs = tryGet!string(rhs);
@@ -661,29 +648,36 @@ private Value evalIn(Value lhs, Value rhs, size_t pos)
         return Value((ls.get in rm.get) !is null);
     }
 
-    throw new EvalException(
-            "unsupported 'in' for types " ~ typeName(lhs) ~ " and " ~ typeName(rhs), pos);
+    return Value.err("unsupported 'in' for types " ~ typeName(lhs) ~ " and " ~ typeName(rhs));
 }
 
-private Value evalMember(Value obj, string name, size_t pos)
+private Value evalMember(Value obj, string name)
 {
+    if (isErr(obj))
+        return obj;
+
     // Map field access
     const m = tryGet!(Value[string])(obj);
     if (!m.isNull)
     {
         if (auto p = name in m.get)
             return *p;
-        throw new EvalException("no such key: " ~ name, pos);
+        return Value.err("no such key: " ~ name);
     }
     // Entry (lazy) field access
     auto e = tryGet!Entry(obj);
     if (!e.isNull)
         return e.get.resolve(name);
-    throw new EvalException("cannot access member '" ~ name ~ "' on " ~ typeName(obj), pos);
+    return Value.err("cannot access member '" ~ name ~ "' on " ~ typeName(obj));
 }
 
-private Value evalIndex(Value obj, Value index, size_t pos)
+private Value evalIndex(Value obj, Value index)
 {
+    if (isErr(obj))
+        return obj;
+    if (isErr(index))
+        return index;
+
     // List indexing
     auto listVal = tryGet!(Value[])(obj);
     auto idxVal = tryGet!long(index);
@@ -694,7 +688,7 @@ private Value evalIndex(Value obj, Value index, size_t pos)
         if (idx < 0)
             idx += cast(long) list.length;
         if (idx < 0 || idx >= cast(long) list.length)
-            throw new EvalException("index out of range", pos);
+            return Value.err("index out of range");
         return list[cast(size_t) idx];
     }
 
@@ -705,10 +699,10 @@ private Value evalIndex(Value obj, Value index, size_t pos)
     {
         if (auto p = ik.get in im.get)
             return *p;
-        throw new EvalException("no such key: " ~ ik.get, pos);
+        return Value.err("no such key: " ~ ik.get);
     }
 
-    throw new EvalException("cannot index " ~ typeName(obj), pos);
+    return Value.err("cannot index " ~ typeName(obj));
 }
 
 private Value evalFunction(string name, Value[] args, size_t pos)
@@ -719,68 +713,74 @@ private Value evalFunction(string name, Value[] args, size_t pos)
     case "size":
         if (args.length != 1)
             throw new EvalException("size() takes exactly 1 argument", pos);
-        return evalSize(args[0], pos);
+        return evalSize(args[0]);
     case "has":
         // TODO: has() requires macro-like behavior (don't eval the arg).
-        // For now, just return an error.
         throw new EvalException("has() is not yet implemented", pos);
     case "type":
         if (args.length != 1)
             throw new EvalException("type() takes exactly 1 argument", pos);
+        if (isErr(args[0]))
+            return args[0];
         return Value(typeName(args[0]));
     case "int":
         if (args.length != 1)
             throw new EvalException("int() takes exactly 1 argument", pos);
-        return evalIntCast(args[0], pos);
+        return evalIntCast(args[0]);
     case "uint":
         if (args.length != 1)
             throw new EvalException("uint() takes exactly 1 argument", pos);
-        return evalUintCast(args[0], pos);
+        return evalUintCast(args[0]);
     case "double":
         if (args.length != 1)
             throw new EvalException("double() takes exactly 1 argument", pos);
-        return evalDoubleCast(args[0], pos);
+        return evalDoubleCast(args[0]);
     case "string":
         if (args.length != 1)
             throw new EvalException("string() takes exactly 1 argument", pos);
-        return evalStringCast(args[0], pos);
+        return evalStringCast(args[0]);
     default:
         throw new EvalException("unknown function: " ~ name, pos);
     }
 }
 
-private Value evalMethod(Value obj, string name, Value[] args, size_t pos)
+private Value evalMethod(Value obj, string name, Value[] args)
 {
+    if (isErr(obj))
+        return obj;
+
     switch (name)
     {
     case "size":
         if (args.length != 0)
-            throw new EvalException(".size() takes no arguments", pos);
-        return evalSize(obj, pos);
+            return Value.err(".size() takes no arguments");
+        return evalSize(obj);
     case "contains":
         if (args.length != 1)
-            throw new EvalException(".contains() takes exactly 1 argument", pos);
-        return evalContains(obj, args[0], pos);
+            return Value.err(".contains() takes exactly 1 argument");
+        return evalContains(obj, args[0]);
     case "startsWith":
         if (args.length != 1)
-            throw new EvalException(".startsWith() takes exactly 1 argument", pos);
-        return evalStartsWith(obj, args[0], pos);
+            return Value.err(".startsWith() takes exactly 1 argument");
+        return evalStartsWith(obj, args[0]);
     case "endsWith":
         if (args.length != 1)
-            throw new EvalException(".endsWith() takes exactly 1 argument", pos);
-        return evalEndsWith(obj, args[0], pos);
+            return Value.err(".endsWith() takes exactly 1 argument");
+        return evalEndsWith(obj, args[0]);
     case "matches":
         // TODO: regex matching
-        throw new EvalException(".matches() is not yet implemented", pos);
+        return Value.err(".matches() is not yet implemented");
     default:
-        throw new EvalException("unknown method: " ~ name, pos);
+        return Value.err("unknown method: " ~ name);
     }
 }
 
 // ── Built-in function implementations ───────────────────────────────
 
-private Value evalSize(Value v, size_t pos)
+private Value evalSize(Value v)
 {
+    if (isErr(v))
+        return v;
     auto s = tryGet!string(v);
     if (!s.isNull)
         return Value(cast(long) s.get.length);
@@ -793,44 +793,58 @@ private Value evalSize(Value v, size_t pos)
     auto m = tryGet!(Value[string])(v);
     if (!m.isNull)
         return Value(cast(long) m.get.length);
-    throw new EvalException("size() not supported for " ~ typeName(v), pos);
+    return Value.err("size() not supported for " ~ typeName(v));
 }
 
-private Value evalContains(Value obj, Value arg, size_t pos)
+private Value evalContains(Value obj, Value arg)
 {
     import std.algorithm : canFind;
 
+    if (isErr(obj))
+        return obj;
+    if (isErr(arg))
+        return arg;
     auto s = tryGet!string(obj);
     auto sub = tryGet!string(arg);
     if (!s.isNull && !sub.isNull)
         return Value(s.get.canFind(sub.get));
-    throw new EvalException(".contains() requires string arguments", pos);
+    return Value.err(".contains() requires string arguments");
 }
 
-private Value evalStartsWith(Value obj, Value arg, size_t pos)
+private Value evalStartsWith(Value obj, Value arg)
 {
     import std.algorithm : startsWith;
 
+    if (isErr(obj))
+        return obj;
+    if (isErr(arg))
+        return arg;
     auto s = tryGet!string(obj);
     auto pre = tryGet!string(arg);
     if (!s.isNull && !pre.isNull)
         return Value(s.get.startsWith(pre.get));
-    throw new EvalException(".startsWith() requires string arguments", pos);
+    return Value.err(".startsWith() requires string arguments");
 }
 
-private Value evalEndsWith(Value obj, Value arg, size_t pos)
+private Value evalEndsWith(Value obj, Value arg)
 {
     import std.algorithm : endsWith;
 
+    if (isErr(obj))
+        return obj;
+    if (isErr(arg))
+        return arg;
     auto s = tryGet!string(obj);
     auto suf = tryGet!string(arg);
     if (!s.isNull && !suf.isNull)
         return Value(s.get.endsWith(suf.get));
-    throw new EvalException(".endsWith() requires string arguments", pos);
+    return Value.err(".endsWith() requires string arguments");
 }
 
-private Value evalIntCast(Value v, size_t pos)
+private Value evalIntCast(Value v)
 {
+    if (isErr(v))
+        return v;
     auto i = tryGet!long(v);
     if (!i.isNull)
         return Value(i.get);
@@ -846,13 +860,15 @@ private Value evalIntCast(Value v, size_t pos)
         try
             return Value(s.get.to!long);
         catch (ConvException)
-            throw new EvalException("cannot convert string to int: " ~ s.get, pos);
+            return Value.err("cannot convert string to int: " ~ s.get);
     }
-    throw new EvalException("cannot convert " ~ typeName(v) ~ " to int", pos);
+    return Value.err("cannot convert " ~ typeName(v) ~ " to int");
 }
 
-private Value evalUintCast(Value v, size_t pos)
+private Value evalUintCast(Value v)
 {
+    if (isErr(v))
+        return v;
     auto i = tryGet!long(v);
     if (!i.isNull)
         return Value(cast(ulong) i.get);
@@ -868,13 +884,15 @@ private Value evalUintCast(Value v, size_t pos)
         try
             return Value(s.get.to!ulong);
         catch (ConvException)
-            throw new EvalException("cannot convert string to uint: " ~ s.get, pos);
+            return Value.err("cannot convert string to uint: " ~ s.get);
     }
-    throw new EvalException("cannot convert " ~ typeName(v) ~ " to uint", pos);
+    return Value.err("cannot convert " ~ typeName(v) ~ " to uint");
 }
 
-private Value evalDoubleCast(Value v, size_t pos)
+private Value evalDoubleCast(Value v)
 {
+    if (isErr(v))
+        return v;
     auto i = tryGet!long(v);
     if (!i.isNull)
         return Value(cast(double) i.get);
@@ -890,13 +908,15 @@ private Value evalDoubleCast(Value v, size_t pos)
         try
             return Value(s.get.to!double);
         catch (ConvException)
-            throw new EvalException("cannot convert string to double: " ~ s.get, pos);
+            return Value.err("cannot convert string to double: " ~ s.get);
     }
-    throw new EvalException("cannot convert " ~ typeName(v) ~ " to double", pos);
+    return Value.err("cannot convert " ~ typeName(v) ~ " to double");
 }
 
-private Value evalStringCast(Value v, size_t pos)
+private Value evalStringCast(Value v)
 {
+    if (isErr(v))
+        return v;
     auto s = tryGet!string(v);
     if (!s.isNull)
         return Value(s.get);
@@ -912,7 +932,7 @@ private Value evalStringCast(Value v, size_t pos)
     auto b = tryGet!bool(v);
     if (!b.isNull)
         return Value(b.get ? "true" : "false");
-    throw new EvalException("cannot convert " ~ typeName(v) ~ " to string", pos);
+    return Value.err("cannot convert " ~ typeName(v) ~ " to string");
 }
 
 // ── Literal parsing helpers ─────────────────────────────────────────
@@ -1260,12 +1280,13 @@ unittest
     evaluate(`"z" in {"x": 1, "y": 2}`, emptyContext()).should.be(value(false));
 }
 
-@("Eval: division by zero throws")
+@("Eval: division by zero returns error value")
 unittest
 {
     import dshould;
 
-    evaluate("1 / 0", emptyContext()).should.throwA!EvalException;
+    // Division by zero is now an error value, not an exception
+    evaluate("1 / 0", emptyContext()).type.should.be(Value.Type.err);
 }
 
 @("Eval: syntax error throws")
@@ -1304,8 +1325,24 @@ unittest
 {
     import dshould;
 
-    // false && (error) should not throw
+    // false && (error) should produce false, not propagate error
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
-    // true || (error) should not throw
+    // true || (error) should produce true, not propagate error
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
+}
+
+@("Eval: error propagation")
+unittest
+{
+    import dshould;
+
+    // Errors propagate through operators
+    evaluate("1/0 + 1", emptyContext()).type.should.be(Value.Type.err);
+    evaluate("-(1/0)", emptyContext()).type.should.be(Value.Type.err);
+    // But short-circuit absorbs errors
+    evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
+    evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
+    // Non-short-circuit propagates
+    evaluate("true && (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
+    evaluate("false || (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
 }
