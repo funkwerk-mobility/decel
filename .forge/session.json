@@ -1005,6 +1005,15 @@
       "streaming": true,
       "actual_cost": 0.06859875,
       "generation_id": "gen-1770917295-ps89LqwPP7hUd5jrZSxD"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917376748.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917376748.json",
+      "timestamp": 1770917376.7505152,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.09172225,
+      "generation_id": "gen-1770917377-Gv2yUGRrUstT0Ii92cHb"
     }
   ],
   "messages": [
@@ -2983,6 +2992,50 @@
         {
           "commit": "3482e60da98f",
           "message": "Committed: 2 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 741dab72",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "oh shit nice! hell yes! congrats. can we set up a todo of open cel features now that we have the skeleton?"
+    },
+    {
+      "role": "assistant",
+      "content": "Absolutely! Let me update the TODO.md with a comprehensive feature roadmap based on the CEL spec and what we've built so far:\n\n<edit file=\"TODO.md\">\n# decel \u2014 TODO\n\n## \u2705 Implemented\n\n- [x] Lexer: full CEL token set (ints, uints, floats, strings, bytes, keywords, operators)\n- [x] Pratt parser with correct operator precedence\n- [x] Integer arithmetic (+, -, *, /, %)\n- [x] Unsigned integer arithmetic\n- [x] Double arithmetic (with int/uint promotion)\n- [x] String concatenation and comparison\n- [x] Boolean logic (&&, ||, !)\n- [x] Short-circuit evaluation (false && err \u2192 false, true || err \u2192 true)\n- [x] Error-value semantics (eval errors are Values, not exceptions)\n- [x] Comparison operators (<, <=, >, >=, ==, !=)\n- [x] Ternary conditional (? :)\n- [x] List literals and indexing\n- [x] Map literals (string keys), field access, and index access\n- [x] Unary negation (-, !)\n- [x] Variable resolution via Context\n- [x] `in` operator (string contains, map key membership)\n- [x] `size()` function and method\n- [x] `.contains()`, `.startsWith()`, `.endsWith()` string methods\n- [x] Type cast functions: `int()`, `uint()`, `double()`, `string()`\n- [x] `type()` function\n- [x] Entry (lazy map) support via abstract class\n- [x] Nested member access (e.g., `req.method`)\n- [x] List concatenation with `+`\n- [x] Triple-quoted strings\n- [x] Raw strings (r\"...\")\n- [x] Hex integer literals (0xFF)\n- [x] Escape sequences in strings\n\n## \ud83d\udd28 Core CEL Features \u2014 Not Yet Implemented\n\n### High Priority\n\n- [ ] **`has()` macro** \u2014 `has(x.y)` tests field existence without evaluating.\n      Needs special parser handling: don't evaluate the argument, just check\n      if the member/key exists. Returns `bool`.\n\n- [ ] **`.matches()` regex method** \u2014 `s.matches(re)` for RE2-style regex.\n      D's `std.regex` should work. Need to decide on caching compiled patterns.\n\n- [ ] **`Value.opEquals` / deep equality** \u2014 The `in` operator on lists\n      currently always returns `false` because we can't compare Values.\n      Need `opEquals` on Value (recursive for lists/maps).\n\n- [ ] **Null semantics** \u2014 CEL specifies: `null == null` is `true`,\n      `null != X` is `true` for non-null X, arithmetic with null is an error.\n      Verify and test our current behavior.\n\n- [ ] **Duration and timestamp types** \u2014 CEL has `google.protobuf.Timestamp`\n      and `google.protobuf.Duration` as first-class types with arithmetic.\n      Could use D's `core.time.Duration` and `std.datetime.SysTime`.\n\n### Medium Priority\n\n- [ ] **Non-string map keys** \u2014 CEL spec allows `bool`, `int`, `uint`, and\n      `string` as map keys. We only support `string`. Would need to change\n      `Value[string]` to a custom map type. (See COMPATIBILITY.md)\n\n- [ ] **Bytes operations** \u2014 Bytes literals are tokenized but bytes values\n      aren't fully operational. Need: comparison, `size()`, `+` concatenation.\n\n- [ ] **List/map equality** \u2014 `[1, 2] == [1, 2]` should be `true`.\n      Requires recursive deep equality (blocked on `Value.opEquals`).\n\n- [ ] **Unsigned/signed cross-type comparison** \u2014 `1u == 1` should be `true`.\n      Currently uint and int are different types with no cross-comparison.\n\n- [ ] **Overflow detection** \u2014 CEL specifies that integer overflow is an error.\n      We currently wrap silently.\n\n### Lower Priority\n\n- [ ] **Comprehensions / macros** \u2014 `list.all(x, x > 0)`, `list.exists(x, x > 0)`,\n      `list.map(x, x * 2)`, `list.filter(x, x > 0)`. These are macros in CEL,\n      not functions \u2014 the second argument is an expression, not a value.\n\n- [ ] **Custom functions** \u2014 User-registered functions via `Env`. Need a\n      registration API and dispatch mechanism.\n\n- [ ] **`dyn()` type** \u2014 Dynamic type assertion, rarely used in practice.\n\n- [ ] **Enum support** \u2014 CEL can reference protobuf enum values by name.\n\n- [ ] **Better error messages** \u2014 Include source context (the expression\n      snippet) in error messages, not just byte offset.\n\n- [ ] **Performance** \u2014 Currently re-tokenizes on every `evaluate()` call.\n      Could cache token arrays or build a simple AST for repeated evaluation.\n\n## \ud83c\udfd7\ufe0f Infrastructure\n\n- [ ] **Conformance tests** \u2014 Run against the official\n      [cel-spec conformance suite](https://github.com/google/cel-spec/tree/master/tests).\n\n- [ ] **README with examples** \u2014 Usage documentation, API examples.\n\n- [ ] **DUB package publishing** \u2014 Register on code.dlang.org.\n\n- [ ] **Benchmarks** \u2014 Compare against cel-go for common expressions.\n\n## Architecture Notes\n\n- Single-pass tokenize \u2192 evaluate. No AST.\n- Error values (`Value.err`) for evaluation errors (division by zero,\n  type mismatches, missing keys). Errors propagate through operators\n  and are naturally absorbed by short-circuit `&&` and `||`.\n- `EvalException` only for parse/syntax errors (unexpected token, etc.).\n- Pratt parsing for operator precedence.\n- Short-circuit `&&` and `||` \u2014 both sides are always parsed, but\n  `false && err` \u2192 `false` and `true || err` \u2192 `true`.\n</edit>\n\n<run_tests/>\n<commit message=\"Update TODO.md with comprehensive CEL feature roadmap\n\nOrganize into completed features, high/medium/low priority remaining\nwork, and infrastructure tasks. Key gaps: has() macro, .matches(),\ndeep equality, null semantics, duration/timestamp types, comprehensions,\nand custom function registration.\"/>\n\nHere's the roadmap! The big picture:\n\n**High priority** (most impactful for real-world use):\n- `has()` macro \u2014 needs parser-level changes (don't evaluate the argument)\n- `.matches()` \u2014 straightforward with D's `std.regex`\n- `Value.opEquals` \u2014 unblocks list `in`, list/map equality, and comprehensions\n- Null semantics \u2014 verify/fix behavior\n\n**Medium priority** (spec completeness):\n- Non-string map keys, bytes operations, cross-type numeric comparison, overflow detection\n\n**Lower priority** (advanced features):\n- Comprehensions (`all`, `exists`, `map`, `filter`) \u2014 the big one\n- Custom function registration\n- Enum support\n\n**Infrastructure**:\n- Official conformance test suite would be the gold standard for correctness\n\nWhat would you like to tackle next?",
+      "_inline_results": [
+        {
+          "message": "Wrote 4799 bytes to TODO.md",
+          "modified_files": [
+            "TODO.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "decel.eval.Eval: error propagation:\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: division by zero returns error value:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: integer arithmetic:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string operations:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: unary minus:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: nested member access:\n\nTime taken: 897 \u03bcs and 6 hnsecs\n33 test(s) run, 0 failed.\n\nOK!\n\n",
+          "output": "decel.eval.Eval: error propagation:\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: division by zero returns error value:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: integer arithmetic:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string operations:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: unary minus:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: nested member access:\n\nTime taken: 897 \u03bcs and 6 hnsecs\n33 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "15f1b3535cf4",
+          "message": "Committed: 1 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],
