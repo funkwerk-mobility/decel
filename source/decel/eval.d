@@ -993,14 +993,14 @@ private struct ComprehensionArgs
     string binder;
     /// Token position where the body expression starts.
     size_t bodyStart;
-    /// Token position after the body expression.
+    /// Token position after the body expression (established by null parse).
     size_t bodyEnd;
 }
 
 /// Parse a comprehension's arguments: binder, comma, body expression.
 /// The opening '(' has already been consumed; this consumes through ')'.
-/// The body is parsed once (with binder=null) to advance the parser and
-/// record the token range. evalBody then replays from that range.
+/// Creates a sub-parser with binder=null to establish the expected end
+/// position. The main parser is advanced to match.
 private ComprehensionArgs parseComprehensionArgs(ref Parser parser)
 {
     ComprehensionArgs args;
@@ -1008,37 +1008,38 @@ private ComprehensionArgs parseComprehensionArgs(ref Parser parser)
     args.binder = binderTok.text;
     parser.expect(Token.Kind.comma);
     args.bodyStart = parser.pos;
-    // Parse once with binder resolving to null to advance past the body
-    auto outerCtx = parser.ctx;
-    parser.ctx = (string name) {
-        if (name == args.binder)
-            return Value.null_();
-        return outerCtx(name);
-    };
-    parser.parseExpr(0);
-    parser.ctx = outerCtx;
-    args.bodyEnd = parser.pos;
+    // Parse once with a sub-parser (binder→null) to find where the body ends.
+    auto nullCtx = bindContext(parser.ctx, args.binder, Value.null_());
+    auto probe = Parser(parser.tokens, nullCtx, parser.macros);
+    probe.pos = args.bodyStart;
+    probe.parseExpr(0);
+    args.bodyEnd = probe.pos;
+    // Advance the main parser to match
+    parser.pos = args.bodyEnd;
     parser.expect(Token.Kind.rparen);
     return args;
 }
 
 /// Re-evaluate the body expression with a binder variable bound to element.
-/// Resets parser.pos to bodyStart, parses, and asserts it lands at bodyEnd.
+/// Creates a sub-parser starting at bodyStart and asserts it lands at bodyEnd.
 private Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)
 {
-    auto savedPos = parser.pos;
-    auto outerCtx = parser.ctx;
-    parser.ctx = (string name) {
-        if (name == args.binder)
-            return element;
-        return outerCtx(name);
-    };
-    parser.pos = args.bodyStart;
-    auto result = parser.parseExpr(0);
-    assert(parser.pos == args.bodyEnd, "comprehension body consumed different tokens on replay");
-    parser.ctx = outerCtx;
-    parser.pos = savedPos;
+    auto innerCtx = bindContext(parser.ctx, args.binder, element);
+    auto sub = Parser(parser.tokens, innerCtx, parser.macros);
+    sub.pos = args.bodyStart;
+    auto result = sub.parseExpr(0);
+    assert(sub.pos == args.bodyEnd, "comprehension body consumed different tokens on replay");
     return result;
+}
+
+/// Layer a single binding on top of an existing context.
+private Context bindContext(Context outer, string name, Value val)
+{
+    return (string n) {
+        if (n == name)
+            return val;
+        return outer(n);
+    };
 }
 
 /// `list.all(x, x > 0)` — true if body is true for all elements.
