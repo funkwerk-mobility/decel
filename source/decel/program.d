@@ -4,30 +4,37 @@
 module decel.program;
 
 import decel.context;
+import decel.eval;
 import decel.value;
 
-/// A compiled CEL program. Produced by Env.compile().
-/// Evaluate against a Context to get a result Value.
+/// A compiled CEL program. Stores the source and evaluates on demand.
 struct Program
 {
-    /// The original source expression. TODO: replace with AST.
+    /// The original source expression.
     string source;
 
     /// Evaluate this program against the given context.
     Value eval(Context ctx)
     {
-        // TODO: walk AST, evaluate @nogc using ctx
-        cast(void) ctx;
-        return Value.err("not implemented");
+        return evaluate(source, ctx);
     }
 }
 
-@("Program: eval stub returns error")
+@("Program: eval returns correct result")
 unittest
 {
     import dshould;
 
-    auto prog = Program("true");
-    auto result = prog.eval(emptyContext());
-    result.type.should.be(Value.Type.err);
+    auto prog = Program("1 + 2");
+    prog.eval(emptyContext()).should.be(value(3L));
+}
+
+@("Program: eval with context")
+unittest
+{
+    import dshould;
+
+    auto prog = Program("x + 1");
+    auto ctx = contextFrom(["x": value(10L)]);
+    prog.eval(ctx).should.be(value(11L));
 }

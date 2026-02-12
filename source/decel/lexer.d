@@ -446,7 +446,7 @@ unittest
     auto tokens = tokenize("x in true false null foo_bar");
     with (Token.Kind)
         tokens.map!"a.kind".should.be([
-            ident, inKw, trueKw, falseKw, nullKw, ident, eof
+        ident, inKw, trueKw, falseKw, nullKw, ident, eof
     ]);
     tokens.map!"a.text".should.be([
         "x", "in", "true", "false", "null", "foo_bar", ""
@@ -540,6 +540,6 @@ unittest
     auto tokens = tokenize("-1 + a - b");
     with (Token.Kind)
         tokens.map!"a.kind".should.be([
-            minus, intLit, plus, ident, minus, ident, eof
+        minus, intLit, plus, ident, minus, ident, eof
     ]);
 }
