@@ -40,11 +40,21 @@ class EvalException : Exception
     }
 }
 
+/// A macro receives the parser to handle its own argument parsing.
+/// The opening '(' has already been consumed; the macro must consume ')'.
+alias Macro = Value delegate(ref Parser parser);
+
 /// Evaluate a CEL expression string against a context.
 Value evaluate(string source, Context ctx)
 {
+    return evaluateWithMacros(source, ctx, null);
+}
+
+/// Evaluate a CEL expression with custom macros.
+Value evaluateWithMacros(string source, Context ctx, Macro[string] macros)
+{
     auto tokens = tokenize(source);
-    auto parser = Parser(tokens, ctx);
+    auto parser = Parser(tokens, ctx, macros);
     auto result = parser.parseExpr(0);
     parser.expect(Token.Kind.eof);
     return result;
@@ -57,12 +67,14 @@ private struct Parser
     Token[] tokens;
     Context ctx;
     size_t pos;
+    Macro[string] macros;
 
-    this(Token[] tokens, Context ctx)
+    this(Token[] tokens, Context ctx, Macro[string] macros)
     {
         this.tokens = tokens;
         this.ctx = ctx;
         this.pos = 0;
+        this.macros = macros is null ? builtinMacros() : merge(builtinMacros(), macros);
     }
 
     /// Current token.
@@ -265,7 +277,13 @@ private struct Parser
             // Function call: ident(args...)
             if (peek().kind == Token.Kind.lparen)
             {
-                advance();
+                advance(); // consume '('
+                // Check macros first — they handle their own arg parsing
+                if (auto m = tok.text in macros)
+                {
+                    return (*m)(this);
+                }
+                // Regular function: parse args normally
                 auto args = parseArgList();
                 expect(Token.Kind.rparen);
                 return evalFunction(tok.text, args, tok.pos);
@@ -633,11 +651,13 @@ private Value evalIn(Value lhs, Value rhs)
         return Value(rs.get.canFind(ls.get));
     }
 
-    // List membership
-    const rl = tryGet!(Value[])(rhs);
+    // List membership (deep equality)
+    auto rl = tryGet!(Value[])(rhs);
     if (!rl.isNull)
     {
-        // TODO: deep equality check
+        foreach (ref elem; rl.get)
+            if (elem == lhs)
+                return Value(true);
         return Value(false);
     }
 
@@ -714,9 +734,6 @@ private Value evalFunction(string name, Value[] args, size_t pos)
         if (args.length != 1)
             throw new EvalException("size() takes exactly 1 argument", pos);
         return evalSize(args[0]);
-    case "has":
-        // TODO: has() requires macro-like behavior (don't eval the arg).
-        throw new EvalException("has() is not yet implemented", pos);
     case "type":
         if (args.length != 1)
             throw new EvalException("type() takes exactly 1 argument", pos);
@@ -933,6 +950,36 @@ private Value evalStringCast(Value v)
     if (!b.isNull)
         return Value(b.get ? "true" : "false");
     return Value.err("cannot convert " ~ typeName(v) ~ " to string");
+}
+
+// ── Macros ──────────────────────────────────────────────────────────
+
+/// Built-in macros that ship with every evaluator.
+private Macro[string] builtinMacros()
+{
+    Macro[string] m;
+    m["has"] = (ref Parser p) => macroHas(p);
+    return m;
+}
+
+/// Merge two macro tables, with user macros overriding builtins.
+private Macro[string] merge(Macro[string] base, Macro[string] overrides)
+{
+    foreach (k, v; overrides)
+        base[k] = v;
+    return base;
+}
+
+/// `has(x.y)` — test whether field/key `y` exists on `x`.
+/// Parses the argument as a member expression; returns true if it resolves
+/// without producing an error, false if the member doesn't exist.
+private Value macroHas(ref Parser parser)
+{
+    // Parse the argument expression normally — errors become Value.err
+    auto arg = parser.parseExpr(0);
+    parser.expect(Token.Kind.rparen);
+    // has() returns true if arg is not an error, false if it is
+    return Value(arg.type != Value.Type.err);
 }
 
 // ── Literal parsing helpers ─────────────────────────────────────────
@@ -1329,6 +1376,46 @@ unittest
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
     // true || (error) should produce true, not propagate error
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
+}
+
+@("Eval: has() macro")
+unittest
+{
+    import dshould;
+
+    auto ctx = contextFrom([
+        "req": value(["method": value("GET"), "path": value("/api")])
+    ]);
+    evaluate(`has(req.method)`, ctx).should.be(value(true));
+    evaluate(`has(req.missing)`, ctx).should.be(value(false));
+    evaluate(`has(req)`, ctx).should.be(value(true));
+    evaluate(`has(unknown)`, ctx).should.be(value(false));
+}
+
+@("Eval: in operator with list membership")
+unittest
+{
+    import dshould;
+
+    evaluate(`1 in [1, 2, 3]`, emptyContext()).should.be(value(true));
+    evaluate(`4 in [1, 2, 3]`, emptyContext()).should.be(value(false));
+    evaluate(`"a" in ["a", "b", "c"]`, emptyContext()).should.be(value(true));
+    evaluate(`"d" in ["a", "b", "c"]`, emptyContext()).should.be(value(false));
+}
+
+@("Eval: custom macros")
+unittest
+{
+    import dshould;
+
+    // Custom macro: always(expr) evaluates expr but always returns true
+    Macro[string] customs;
+    customs["always"] = delegate Value(ref Parser p) {
+        p.parseExpr(0); // evaluate and discard
+        p.expect(Token.Kind.rparen);
+        return Value(true);
+    };
+    evaluateWithMacros(`always(1 + 2)`, emptyContext(), customs).should.be(value(true));
 }
 
 @("Eval: error propagation")

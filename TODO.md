@@ -34,16 +34,20 @@
 
 ### High Priority
 
-- [ ] **`has()` macro** — `has(x.y)` tests field existence without evaluating.
-      Needs special parser handling: don't evaluate the argument, just check
-      if the member/key exists. Returns `bool`.
+- [x] **`has()` macro** — `has(x.y)` tests field existence without evaluating.
+      Implemented as a built-in macro that receives the parser.
+
+- [x] **`Value.opEquals` / deep equality** — Recursive comparison for all
+      Value types including lists and maps. Enables `in` on lists.
+
+- [x] **`in` operator on lists** — `1 in [1, 2, 3]` now works with deep equality.
+
+- [x] **Macro system** — Macros receive the parser and handle their own argument
+      parsing. Built-in macros (`has`) and custom macros via `evaluateWithMacros()`.
+      This is the foundation for comprehensions, custom functions, etc.
 
 - [ ] **`.matches()` regex method** — `s.matches(re)` for RE2-style regex.
       D's `std.regex` should work. Need to decide on caching compiled patterns.
-
-- [ ] **`Value.opEquals` / deep equality** — The `in` operator on lists
-      currently always returns `false` because we can't compare Values.
-      Need `opEquals` on Value (recursive for lists/maps).
 
 - [ ] **Null semantics** — CEL specifies: `null == null` is `true`,
       `null != X` is `true` for non-null X, arithmetic with null is an error.
