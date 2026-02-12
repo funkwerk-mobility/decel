@@ -428,144 +428,118 @@ private Token lexString(string source, ref size_t i, size_t start, bool isRaw)
 @("Lexer: simple arithmetic")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("1 + 2 * 3");
-    tokens[0].kind.should.be(Token.Kind.intLit);
-    tokens[0].text.should.be("1");
-    tokens[1].kind.should.be(Token.Kind.plus);
-    tokens[2].kind.should.be(Token.Kind.intLit);
-    tokens[2].text.should.be("2");
-    tokens[3].kind.should.be(Token.Kind.star);
-    tokens[4].kind.should.be(Token.Kind.intLit);
-    tokens[4].text.should.be("3");
-    tokens[5].kind.should.be(Token.Kind.eof);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([intLit, plus, intLit, star, intLit, eof]);
+    tokens.map!"a.text".should.be(["1", "+", "2", "*", "3", ""]);
 }
 
 @("Lexer: identifiers and keywords")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("x in true false null foo_bar");
-    tokens[0].kind.should.be(Token.Kind.ident);
-    tokens[0].text.should.be("x");
-    tokens[1].kind.should.be(Token.Kind.inKw);
-    tokens[2].kind.should.be(Token.Kind.trueKw);
-    tokens[3].kind.should.be(Token.Kind.falseKw);
-    tokens[4].kind.should.be(Token.Kind.nullKw);
-    tokens[5].kind.should.be(Token.Kind.ident);
-    tokens[5].text.should.be("foo_bar");
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([
+            ident, inKw, trueKw, falseKw, nullKw, ident, eof
+    ]);
+    tokens.map!"a.text".should.be([
+        "x", "in", "true", "false", "null", "foo_bar", ""
+    ]);
 }
 
 @("Lexer: comparison and logical operators")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("a == b && c != d || e <= f >= g");
-    tokens[0].kind.should.be(Token.Kind.ident);
-    tokens[1].kind.should.be(Token.Kind.eqEq);
-    tokens[2].kind.should.be(Token.Kind.ident);
-    tokens[3].kind.should.be(Token.Kind.ampAmp);
-    tokens[4].kind.should.be(Token.Kind.ident);
-    tokens[5].kind.should.be(Token.Kind.bangEq);
-    tokens[6].kind.should.be(Token.Kind.ident);
-    tokens[7].kind.should.be(Token.Kind.pipePipe);
-    tokens[8].kind.should.be(Token.Kind.ident);
-    tokens[9].kind.should.be(Token.Kind.ltEq);
-    tokens[10].kind.should.be(Token.Kind.ident);
-    tokens[11].kind.should.be(Token.Kind.gtEq);
-    tokens[12].kind.should.be(Token.Kind.ident);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([
+        ident, eqEq, ident, ampAmp, ident, bangEq, ident, pipePipe, ident,
+        ltEq, ident, gtEq, ident, eof
+    ]);
 }
 
 @("Lexer: string literals")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize(`"hello" 'world'`);
-    tokens[0].kind.should.be(Token.Kind.stringLit);
-    tokens[0].text.should.be(`"hello"`);
-    tokens[1].kind.should.be(Token.Kind.stringLit);
-    tokens[1].text.should.be(`'world'`);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([stringLit, stringLit, eof]);
+    tokens.map!"a.text".should.be([`"hello"`, `'world'`, ""]);
 }
 
 @("Lexer: numeric literals")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("42 3u 0xFF 0x1Au 3.14 1e10 2.5e-3");
-    tokens[0].kind.should.be(Token.Kind.intLit);
-    tokens[0].text.should.be("42");
-    tokens[1].kind.should.be(Token.Kind.uintLit);
-    tokens[1].text.should.be("3u");
-    tokens[2].kind.should.be(Token.Kind.intLit);
-    tokens[2].text.should.be("0xFF");
-    tokens[3].kind.should.be(Token.Kind.uintLit);
-    tokens[3].text.should.be("0x1Au");
-    tokens[4].kind.should.be(Token.Kind.floatLit);
-    tokens[4].text.should.be("3.14");
-    tokens[5].kind.should.be(Token.Kind.floatLit);
-    tokens[5].text.should.be("1e10");
-    tokens[6].kind.should.be(Token.Kind.floatLit);
-    tokens[6].text.should.be("2.5e-3");
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([
+        intLit, uintLit, intLit, uintLit, floatLit, floatLit, floatLit, eof
+    ]);
+    tokens.map!"a.text".should.be([
+        "42", "3u", "0xFF", "0x1Au", "3.14", "1e10", "2.5e-3", ""
+    ]);
 }
 
 @("Lexer: punctuation and grouping")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("foo(a, b[0]).bar ? x : y");
-    tokens[0].kind.should.be(Token.Kind.ident); // foo
-    tokens[1].kind.should.be(Token.Kind.lparen);
-    tokens[2].kind.should.be(Token.Kind.ident); // a
-    tokens[3].kind.should.be(Token.Kind.comma);
-    tokens[4].kind.should.be(Token.Kind.ident); // b
-    tokens[5].kind.should.be(Token.Kind.lbracket);
-    tokens[6].kind.should.be(Token.Kind.intLit); // 0
-    tokens[7].kind.should.be(Token.Kind.rbracket);
-    tokens[8].kind.should.be(Token.Kind.rparen);
-    tokens[9].kind.should.be(Token.Kind.dot);
-    tokens[10].kind.should.be(Token.Kind.ident); // bar
-    tokens[11].kind.should.be(Token.Kind.question);
-    tokens[12].kind.should.be(Token.Kind.ident); // x
-    tokens[13].kind.should.be(Token.Kind.colon);
-    tokens[14].kind.should.be(Token.Kind.ident); // y
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([
+        ident, lparen, ident, comma, ident, lbracket, intLit, rbracket, rparen,
+        dot, ident, question, ident, colon, ident, eof
+    ]);
 }
 
 @("Lexer: escape sequences in strings")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize(`"hello\nworld" "tab\there"`);
-    tokens[0].kind.should.be(Token.Kind.stringLit);
-    tokens[1].kind.should.be(Token.Kind.stringLit);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([stringLit, stringLit, eof]);
 }
 
 @("Lexer: empty input")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("");
-    tokens.length.should.be(1);
-    tokens[0].kind.should.be(Token.Kind.eof);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([eof]);
 }
 
 @("Lexer: unary negation and subtraction")
 unittest
 {
+    import std.algorithm : map;
     import dshould;
 
     auto tokens = tokenize("-1 + a - b");
-    tokens[0].kind.should.be(Token.Kind.minus);
-    tokens[1].kind.should.be(Token.Kind.intLit);
-    tokens[2].kind.should.be(Token.Kind.plus);
-    tokens[3].kind.should.be(Token.Kind.ident);
-    tokens[4].kind.should.be(Token.Kind.minus);
-    tokens[5].kind.should.be(Token.Kind.ident);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([
+            minus, intLit, plus, ident, minus, ident, eof
+    ]);
 }
