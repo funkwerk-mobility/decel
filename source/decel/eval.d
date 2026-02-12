@@ -986,52 +986,59 @@ private MethodMacro[string] builtinMethodMacros()
     return m;
 }
 
-/// Parse a comprehension's arguments: binder identifier, comma, body expression.
-/// Returns the token range for the body so it can be re-evaluated per element.
-/// The opening '(' has been consumed; this consumes through ')'.
+/// Parsed comprehension: binder name and body token range.
 private struct ComprehensionArgs
 {
     /// Name of the iteration variable.
     string binder;
-    /// Saved token range for the body expression (start index, end index).
+    /// Token position where the body expression starts.
     size_t bodyStart;
+    /// Token position after the body expression.
     size_t bodyEnd;
 }
 
+/// Parse a comprehension's arguments: binder, comma, body expression.
+/// The opening '(' has already been consumed; this consumes through ')'.
+/// The body is parsed once (with binder=null) to advance the parser and
+/// record the token range. evalBody then replays from that range.
 private ComprehensionArgs parseComprehensionArgs(ref Parser parser)
 {
     ComprehensionArgs args;
-    // Parse binder: must be an identifier
     auto binderTok = parser.expect(Token.Kind.ident);
     args.binder = binderTok.text;
     parser.expect(Token.Kind.comma);
-    // Record start of body expression
     args.bodyStart = parser.pos;
-    // Parse through the body to find ')' — this consumes the tokens
+    // Parse once with binder resolving to null to advance past the body
+    auto outerCtx = parser.ctx;
+    parser.ctx = (string name) {
+        if (name == args.binder)
+            return Value.null_();
+        return outerCtx(name);
+    };
     parser.parseExpr(0);
+    parser.ctx = outerCtx;
     args.bodyEnd = parser.pos;
     parser.expect(Token.Kind.rparen);
     return args;
 }
 
-/// Evaluate a saved body expression with a binder variable injected into context.
+/// Re-evaluate the body expression with a binder variable bound to element.
+/// Resets parser.pos to bodyStart, parses, and asserts it lands at bodyEnd.
 private Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)
 {
-    // Create a sub-parser that re-parses the body tokens with the binder in scope
-    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd] ~ [
-        Token(Token.Kind.eof, "", 0)
-    ];
-
-    // Build a context that layers the binder on top of the original
+    auto savedPos = parser.pos;
     auto outerCtx = parser.ctx;
-    Context innerCtx = (string name) {
+    parser.ctx = (string name) {
         if (name == args.binder)
             return element;
         return outerCtx(name);
     };
-
-    auto subParser = Parser(bodyTokens, innerCtx, parser.macros);
-    return subParser.parseExpr(0);
+    parser.pos = args.bodyStart;
+    auto result = parser.parseExpr(0);
+    assert(parser.pos == args.bodyEnd, "comprehension body consumed different tokens on replay");
+    parser.ctx = outerCtx;
+    parser.pos = savedPos;
+    return result;
 }
 
 /// `list.all(x, x > 0)` — true if body is true for all elements.

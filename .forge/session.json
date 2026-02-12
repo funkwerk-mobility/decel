@@ -1,10 +1,17 @@
 {
   "active_files": [
-    "source/decel/eval.d",
     "dscanner.ini",
-    "TODO.md",
+    "source/decel/eval.d",
     "source/decel/value.d",
-    "source/decel/package.d"
+    "TODO.md",
+    "source/decel/context.d",
+    "source/test_runner.d",
+    "COMPATIBILITY.md",
+    "source/decel/program.d",
+    "Makefile",
+    "source/decel/lexer.d",
+    "source/decel/package.d",
+    "dub.sdl"
   ],
   "request_log_entries": [
     {
@@ -1149,6 +1156,69 @@
       "streaming": true,
       "actual_cost": 0.24305825,
       "generation_id": "gen-1770917955-hgGKLqStTTT81WYI9bX1"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770919252533.json",
+      "response_file": "/tmp/forge_debug/response_1770919252533.json",
+      "timestamp": 1770919252.5388324,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": null,
+      "generation_id": "gen-1770919253-Wdwpb95QtLPQJKDBwrx1"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770919252632.json",
+      "response_file": "/tmp/forge_debug/response_1770919252632.json",
+      "timestamp": 1770919252.6335154,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": null,
+      "generation_id": "gen-1770919252-r6p3lEWa6djDUGgW2gzr"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770919252739.json",
+      "response_file": "/tmp/forge_debug/response_1770919252739.json",
+      "timestamp": 1770919252.7399104,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": null,
+      "generation_id": "gen-1770919252-8J1b8Wii8er5qd30xAQ0"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770919253308.json",
+      "response_file": "/tmp/forge_debug/response_1770919253308.json",
+      "timestamp": 1770919253.3098328,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.003456,
+      "generation_id": "gen-1770919253-SNAdWzrHd7bk5ctW6DDR"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770919284933.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770919284933.json",
+      "timestamp": 1770919284.9353485,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.6283075,
+      "generation_id": "gen-1770919285-NvSFm3zKhfrQuF1ZCvgr"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770919317086.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770919317086.json",
+      "timestamp": 1770919317.0885322,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.36972625,
+      "generation_id": "gen-1770919317-Fknp1F3aYVO1HI6ocT35"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770919373597.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770919373597.json",
+      "timestamp": 1770919373.599379,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.06749925,
+      "generation_id": "gen-1770919375-YJwhx81iHlaHQJuYVH7b"
     }
   ],
   "messages": [
@@ -3687,6 +3757,87 @@
         {
           "commit": "a7eea753ba18",
           "message": "Committed: 2 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Generated summaries for 15 files",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "ah I see what you did. the parsing is separate because .. uh hang on why actually?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGreat question! You're asking why `parseComprehensionArgs` is separate from `evalBody` \u2014 why parse the comprehension args once, save token positions, then re-parse the body per element.\n\nThe answer: **because we're single-pass**. There's no AST. The token stream is consumed as we go. So when we see `[1,2,3].map(x, x * 2)`, we need to:\n\n1. **Parse through** `x * 2` once to advance past the `)` and continue with the rest of the expression\n2. **Re-evaluate** `x * 2` multiple times (once per list element) with different bindings for `x`\n\nSince there's no AST to revisit, we save the token *range* (start/end indices into the token array) during the initial parse, then create a fresh sub-parser over that slice for each iteration. The sub-parser gets its own context with the binder variable injected.\n\n```mermaid\ngraph LR\n    A[\"tokens: [ x , x * 2 ) ...\"] --> B[\"parseComprehensionArgs\"]\n    B --> C[\"binder='x', bodyStart=3, bodyEnd=6\"]\n    C --> D1[\"sub-parser: tokens[3..6] + EOF, ctx={x:1}\"]\n    C --> D2[\"sub-parser: tokens[3..6] + EOF, ctx={x:2}\"]\n    C --> D3[\"sub-parser: tokens[3..6] + EOF, ctx={x:3}\"]\n    D1 --> R1[\"Value(2)\"]\n    D2 --> R2[\"Value(4)\"]\n    D3 --> R3[\"Value(6)\"]\n```\n\nIt's basically \"poor man's AST\" \u2014 instead of building a tree, we just remember where in the token stream the body expression lives and replay it. The first parse also validates that the body is syntactically valid and advances the main parser past the `)`.\n\nThis is also why chaining works \u2014 `list.map(x, x*2).filter(y, y>4)`. The main parser finishes consuming `.map(x, x*2)`, returns the mapped list, then continues to parse `.filter(y, y>4)` from the right position.\n\nNow let me compact the conversation \u2014 we're at 97k tokens:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"from_id\": \"109\", \"to_id\": \"137\", \"summary\": \"Completed major refactors:\\n\\n1. **Error-value refactor**: All eval errors return Value.err instead of throwing. Removed unused `pos` params from eval helpers. EvalException only for parse/syntax errors.\\n\\n2. **Value.opEquals**: Deep recursive equality for all types (bool, int, uint, double, string, bytes, list, map). Error values never equal. Also added toHash.\\n\\n3. **Macro system**: `Macro` alias (function-style, receives ref Parser) and `MethodMacro` alias (method-style, receives Value target + ref Parser). builtinMacros() has `has()`. builtinMethodMacros() has `all`, `exists`, `exists_one`, `map`, `filter`.\\n\\n4. **has() macro**: Parses argument expression, returns true if not err, false if err.\\n\\n5. **Comprehensions**: all/exists/exists_one/map/filter as method macros. parseComprehensionArgs() saves binder name + token range. evalBody() creates sub-parser over saved token range with binder injected into context. Supports chaining and context variable access.\\n\\n6. **List `in` operator**: Now uses deep equality via Value.opEquals.\\n\\n7. **dscanner.ini**: `--config dscanner.ini` works with `\\\"disabled\\\"` values. could_be_immutable_check and undocumented_public_declaration_check disabled. cast(void) used for discarded return values.\\n\\n8. **evaluateWithMacros()**: Public API for custom macro registration.\\n\\nAll 44 tests pass, lint clean. Files in context: eval.d, value.d, lexer.d, context.d, program.d, env.d, package.d, test_runner.d, Makefile, dub.sdl, TODO.md, COMPATIBILITY.md, dscanner.ini.\"}",
+            "name": "compact"
+          },
+          "id": "toolu_vrtx_01JF4HNBe3N2jkXaccdda85q",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_vrtx_01JF4HNBe3N2jkXaccdda85q",
+      "content": "{\"compact\": true, \"from_id\": \"109\", \"success\": true, \"summary\": \"Completed major refactors:\\n\\n1. **Error-value refactor**: All eval errors return Value.err instead of throwing. Removed unused `pos` params from eval helpers. EvalException only for parse/syntax errors.\\n\\n2. **Value.opEquals**: Deep recursive equality for all types (bool, int, uint, double, string, bytes, list, map). Error values never equal. Also added toHash.\\n\\n3. **Macro system**: `Macro` alias (function-style, receives ref Parser) and `MethodMacro` alias (method-style, receives Value target + ref Parser). builtinMacros() has `has()`. builtinMethodMacros() has `all`, `exists`, `exists_one`, `map`, `filter`.\\n\\n4. **has() macro**: Parses argument expression, returns true if not err, false if err.\\n\\n5. **Comprehensions**: all/exists/exists_one/map/filter as method macros. parseComprehensionArgs() saves binder name + token range. evalBody() creates sub-parser over saved token range with binder injected into context. Supports chaining and context variable access.\\n\\n6. **List `in` operator**: Now uses deep equality via Value.opEquals.\\n\\n7. **dscanner.ini**: `--config dscanner.ini` works with `\\\"disabled\\\"` values. could_be_immutable_check and undocumented_public_declaration_check disabled. cast(void) used for discarded return values.\\n\\n8. **evaluateWithMacros()**: Public API for custom macro registration.\\n\\nAll 44 tests pass, lint clean. Files in context: eval.d, value.d, lexer.d, context.d, program.d, env.d, package.d, test_runner.d, Makefile, dub.sdl, TODO.md, COMPATIBILITY.md, dscanner.ini.\", \"to_id\": \"137\"}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "Right! So the answer is: **because there's no AST**. In a single-pass interpreter, tokens are consumed as you go. But comprehensions need to evaluate the body expression *multiple times* (once per list element). Without an AST to revisit, we save the token range (start/end indices) during the first parse, then create a fresh sub-parser over that slice for each iteration.\n\nIt's essentially \"poor man's AST\" \u2014 instead of building a tree node, we just bookmark where the body lives in the token array and replay it. The first parse also validates syntax and advances the main parser past the `)` so the rest of the expression can continue (which is why chaining like `.map(...).filter(...)` works).\n\nIf we had an AST, `parseComprehensionArgs` and `evalBody` would just be \"build the node\" and \"walk the node\" \u2014 same separation, just with a tree instead of token indices."
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 90aaf633",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "yeah poor man's ast is what I expected, that's all good. I'm more wondering like. why not just, parse it once with variable=null to advance the parser state, then just pass the parser state down *directly* in every loop and just assert that it comes out to the same offset?"
+    },
+    {
+      "role": "assistant",
+      "content": "That's a great idea \u2014 simpler, less indirection, and it validates correctness with the assertion. Instead of saving token ranges and creating a sub-parser, just reset `pos` back to where the body starts, re-parse with the binder in context, and assert we end up at the same position.\n\nLet me refactor:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// Parse a comprehension's arguments: binder identifier, comma, body expression.\n/// Returns the token range for the body so it can be re-evaluated per element.\n/// The opening '(' has been consumed; this consumes through ')'.\nprivate struct ComprehensionArgs\n{\n    /// Name of the iteration variable.\n    string binder;\n    /// Saved token range for the body expression (start index, end index).\n    size_t bodyStart;\n    size_t bodyEnd;\n}\n\nprivate ComprehensionArgs parseComprehensionArgs(ref Parser parser)\n{\n    ComprehensionArgs args;\n    // Parse binder: must be an identifier\n    auto binderTok = parser.expect(Token.Kind.ident);\n    args.binder = binderTok.text;\n    parser.expect(Token.Kind.comma);\n    // Record start of body expression\n    args.bodyStart = parser.pos;\n    // Parse through the body to find ')' \u2014 this consumes the tokens\n    parser.parseExpr(0);\n    args.bodyEnd = parser.pos;\n    parser.expect(Token.Kind.rparen);\n    return args;\n}\n\n/// Evaluate a saved body expression with a binder variable injected into context.\nprivate Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)\n{\n    // Create a sub-parser that re-parses the body tokens with the binder in scope\n    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd] ~ [\n        Token(Token.Kind.eof, \"\", 0)\n    ];\n\n    // Build a context that layers the binder on top of the original\n    auto outerCtx = parser.ctx;\n    Context innerCtx = (string name) {\n        if (name == args.binder)\n            return element;\n        return outerCtx(name);\n    };\n\n    auto subParser = Parser(bodyTokens, innerCtx, parser.macros);\n    return subParser.parseExpr(0);\n}\n</search>\n<replace>\n/// Parsed comprehension: binder name and body token range.\nprivate struct ComprehensionArgs\n{\n    /// Name of the iteration variable.\n    string binder;\n    /// Token position where the body expression starts.\n    size_t bodyStart;\n    /// Token position after the body expression.\n    size_t bodyEnd;\n}\n\n/// Parse a comprehension's arguments: binder, comma, body expression.\n/// The opening '(' has already been consumed; this consumes through ')'.\n/// The body is parsed once (with binder=null) to advance the parser and\n/// record the token range. evalBody then replays from that range.\nprivate ComprehensionArgs parseComprehensionArgs(ref Parser parser)\n{\n    ComprehensionArgs args;\n    auto binderTok = parser.expect(Token.Kind.ident);\n    args.binder = binderTok.text;\n    parser.expect(Token.Kind.comma);\n    args.bodyStart = parser.pos;\n    // Parse once with binder resolving to null to advance past the body\n    auto outerCtx = parser.ctx;\n    parser.ctx = (string name) {\n        if (name == args.binder)\n            return Value.null_();\n        return outerCtx(name);\n    };\n    parser.parseExpr(0);\n    parser.ctx = outerCtx;\n    args.bodyEnd = parser.pos;\n    parser.expect(Token.Kind.rparen);\n    return args;\n}\n\n/// Re-evaluate the body expression with a binder variable bound to element.\n/// Resets parser.pos to bodyStart, parses, and asserts it lands at bodyEnd.\nprivate Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)\n{\n    auto savedPos = parser.pos;\n    auto outerCtx = parser.ctx;\n    parser.ctx = (string name) {\n        if (name == args.binder)\n            return element;\n        return outerCtx(name);\n    };\n    parser.pos = args.bodyStart;\n    auto result = parser.parseExpr(0);\n    assert(parser.pos == args.bodyEnd,\n            \"comprehension body consumed different tokens on replay\");\n    parser.ctx = outerCtx;\n    parser.pos = savedPos;\n    return result;\n}\n</replace>\n</edit>\n\n<run_tests/>\n<commit message=\"Simplify comprehensions: reuse parser directly instead of sub-parser\n\nInstead of creating sub-parsers with sliced token arrays, reset the\nmain parser's pos back to the body start and re-parse with the binder\ninjected. Assert that replay consumes the same tokens. Simpler, no\ntoken array copying, and validates correctness.\"/>\n\nThis is cleaner in several ways:\n- No token array slicing/copying (no `tokens[start..end] ~ [eof]`)\n- No `Parser` constructor call per iteration\n- The assertion catches any case where the body parses differently with different bindings (which would be a bug)\n- The parser state (macros, method macros) is naturally shared since it's the same parser",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-12 19:03:24.800630667 +0100\n+++ b/source/decel/eval.d\t2026-02-12 19:03:24.839962801 +0100\n@@ -1035,8 +1035,7 @@\n     };\n     parser.pos = args.bodyStart;\n     auto result = parser.parseExpr(0);\n-    assert(parser.pos == args.bodyEnd,\n-            \"comprehension body consumed different tokens on replay\");\n+    assert(parser.pos == args.bodyEnd, \"comprehension body consumed different tokens on replay\");\n     parser.ctx = outerCtx;\n     parser.pos = savedPos;\n     return result;\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: integer arithmetic:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list.filter() comprehension:\n\nTime taken: 1 ms and 297 \u03bcs\n44 test(s) run, 0 failed.\n\nOK!\n\n",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-12 19:03:24.800630667 +0100\n+++ b/source/decel/eval.d\t2026-02-12 19:03:24.839962801 +0100\n@@ -1035,8 +1035,7 @@\n     };\n     parser.pos = args.bodyStart;\n     auto result = parser.parseExpr(0);\n-    assert(parser.pos == args.bodyEnd,\n-            \"comprehension body consumed different tokens on replay\");\n+    assert(parser.pos == args.bodyEnd, \"comprehension body consumed different tokens on replay\");\n     parser.ctx = outerCtx;\n     parser.pos = savedPos;\n     return result;\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: integer arithmetic:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list.filter() comprehension:\n\nTime taken: 1 ms and 297 \u03bcs\n44 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "files_modified",
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "1eda0242eaf7",
+          "message": "Committed: 1 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],
