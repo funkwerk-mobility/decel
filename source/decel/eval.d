@@ -1307,3 +1307,19 @@ unittest
     // true || (error) should not throw
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
 }
+
+@("Eval: try-catch sanity check")
+unittest
+{
+    // Minimal reproduction: can we catch EvalException through parseExpr?
+    bool caught = false;
+    try
+    {
+        evaluate("1/0", emptyContext());
+    }
+    catch (EvalException)
+    {
+        caught = true;
+    }
+    assert(caught, "EvalException was not caught!");
+}
