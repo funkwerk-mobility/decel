@@ -13,9 +13,10 @@ abstract class Entry
 }
 
 /// A key-value pair for CEL map values.
+/// CEL allows bool, int, uint, and string as map keys.
 struct MapEntry
 {
-    /// The map entry's key.
+    /// The map entry's key (must be bool, int, uint, or string).
     Value key;
     /// The map entry's value.
     Value val;
