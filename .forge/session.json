@@ -369,6 +369,42 @@
       "streaming": true,
       "actual_cost": 0.0296695,
       "generation_id": "gen-1770914873-DRhl1C3BKFlhtUS4mTB5"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770914917696.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770914917696.json",
+      "timestamp": 1770914917.6966004,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.032758,
+      "generation_id": "gen-1770914918-DYsvlV9T6jWhTC7OCMLR"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770914931152.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770914931152.json",
+      "timestamp": 1770914931.1528249,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.02206775,
+      "generation_id": "gen-1770914931-rmuwdvxgvHpc2Pni46kf"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770914937033.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770914937033.json",
+      "timestamp": 1770914937.0340745,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.05627775,
+      "generation_id": "gen-1770914937-wVy5HH86Wj7jiZhUMWTG"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770914947650.json",
+      "response_file": "/tmp/forge_debug/response_1770914947650.json",
+      "timestamp": 1770914947.6508827,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.000384,
+      "generation_id": "gen-1770914947-HUKjliCpvbXF3JoUFihD"
     }
   ],
   "messages": [
@@ -1077,6 +1113,97 @@
         {
           "commit": "7fe6fafaf321",
           "message": "Committed: 1 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 83967ceb",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "wow cel is ass. that's dumb. we're not supporting that. start a COMPATIBILITY.md that states we only support string keys. why would you... that's ass. no. Value[string]."
+    },
+    {
+      "role": "assistant",
+      "content": "[id 59] Ha! Fair enough. Let's nuke `MapEntry`, switch maps to `Value[string]`, and document the deviation.\n\n<edit file=\"source/decel/value.d\">\n<search>\n/// A key-value pair for CEL map values.\n/// CEL allows bool, int, uint, and string as map keys.\nstruct MapEntry\n{\n    /// The map entry's key (must be bool, int, uint, or string).\n    Value key;\n    /// The map entry's value.\n    Value val;\n}\n</search>\n<replace>\n</replace>\n</edit>\n\n<edit file=\"source/decel/value.d\">\n<search>\n            MapEntry[], // map (ordered key-value pairs)\n</search>\n<replace>\n            Value[string], // map (string-keyed)\n</replace>\n</edit>\n\n<edit file=\"source/decel/value.d\">\n<search>\n                (ref MapEntry[] _) => Type.map,\n</search>\n<replace>\n                (ref Value[string] _) => Type.map,\n</replace>\n</edit>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `edit` failed:\n\nSearch text not found in source/decel/value.d.\n\n**NO CLOSE MATCH - the text may have been modified or doesn't exist.\nYou may need to reload the file to see current content.**\n\nFound 76.6% similar text at line 90 (edit distance: 18):\n\n```\n                (ref Value[] _) => Type.list, (ref MapEntry[] _) => Type.map,\n```\n\nDiff (--- your search vs +++ actual file):\n```diff\n--- expected\n+++ actual\n@@ -1 +1 @@\n-                (ref MapEntry[] _) => Type.map,+                (ref Value[] _) => Type.list, (ref MapEntry[] _) => Type.map,\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "The first two edits (removing `MapEntry` struct and changing the `Inner` type) succeeded, but the `type()` match expression is on one line due to dfmt. Let me reload and fix.",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"add\": [\"source/decel/value.d\"]}",
+            "name": "update_context"
+          },
+          "id": "toolu_vrtx_013fUcQ3dfWEe8xgn3tCR8Rs",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_vrtx_013fUcQ3dfWEe8xgn3tCR8Rs",
+      "content": "{\"action\": \"update_context\", \"add\": [\"source/decel/value.d\"], \"message\": \"Added 1 files, removed 0 files from context\", \"remove\": [], \"success\": true}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "Now I can see the actual file. The `MapEntry[]` reference in `type()` needs updating, and the `MapEntry` struct is already removed but there's still a stale reference. Let me fix:\n\n<edit file=\"source/decel/value.d\">\n<search>\n                (ref Value[] _) => Type.list, (ref MapEntry[] _) => Type.map,\n</search>\n<replace>\n                (ref Value[] _) => Type.list, (ref Value[string] _) => Type.map,\n</replace>\n</edit>\n\n<edit file=\"COMPATIBILITY.md\">\n# decel \u2014 CEL Compatibility Notes\n\nThis document tracks intentional deviations from the\n[CEL specification](https://github.com/google/cel-spec).\n\n## String-only map keys\n\nThe CEL spec allows `bool`, `int`, `uint`, and `string` as map keys.\ndecel only supports `string` keys (`Value[string]`).\n\n**Rationale**: Non-string map keys add complexity with minimal practical\nbenefit. Every real-world CEL usage we've seen uses string keys. This\nkeeps the implementation simple and idiomatic in D.\n</edit>\n\n<run_tests/>\n<commit message=\"Replace MapEntry with Value[string] maps, add COMPATIBILITY.md\n\nCEL spec allows bool/int/uint/string map keys \u2014 we only support string.\nDocumented the deviation in COMPATIBILITY.md.\" />\n\nDone! `MapEntry` is gone, maps are now `Value[string]`, and `COMPATIBILITY.md` documents the deviation.",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/value.d",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Wrote 488 bytes to COMPATIBILITY.md",
+          "modified_files": [
+            "COMPATIBILITY.md"
+          ],
+          "new_files": [
+            "COMPATIBILITY.md"
+          ],
+          "side_effects": [
+            "files_modified",
+            "new_files_created"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "dfmt reformatted: source/decel/value.d\ndecel.context.Context: resolve bindings:\ndecel.env.Env: compile returns a Program:\ndecel.program.Program: eval stub returns error:\ndecel.value.Value: construct and check types:\n\nTime taken: 298 \u03bcs and 3 hnsecs\n4 test(s) run, 0 failed.\n\nOK!\n\n",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "output": "dfmt reformatted: source/decel/value.d\ndecel.context.Context: resolve bindings:\ndecel.env.Env: compile returns a Program:\ndecel.program.Program: eval stub returns error:\ndecel.value.Value: construct and check types:\n\nTime taken: 298 \u03bcs and 3 hnsecs\n4 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "files_modified",
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "67060d47706e",
+          "message": "Committed: 2 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],

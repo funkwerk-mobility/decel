@@ -12,16 +12,6 @@ abstract class Entry
     Value resolve(string name);
 }
 
-/// A key-value pair for CEL map values.
-/// CEL allows bool, int, uint, and string as map keys.
-struct MapEntry
-{
-    /// The map entry's key (must be bool, int, uint, or string).
-    Value key;
-    /// The map entry's value.
-    Value val;
-}
-
 /// A CEL value: the runtime representation of any CEL expression result.
 struct Value
 {
@@ -49,7 +39,7 @@ struct Value
             string, // string_
             immutable(ubyte)[], // bytes_
             Value[], // list
-            MapEntry[], // map (ordered key-value pairs)
+            Value[string], // map (string-keyed)
             Entry, // entry (lazy)
             Err, // err
             );
@@ -95,7 +85,7 @@ struct Value
                 (ref bool _) => Type.bool_, (ref long _) => Type.int_,
                 (ref ulong _) => Type.uint_, (ref double _) => Type.double_,
                 (ref string _) => Type.string_, (ref immutable(ubyte)[] _) => Type.bytes_,
-                (ref Value[] _) => Type.list, (ref MapEntry[] _) => Type.map,
+                (ref Value[] _) => Type.list, (ref Value[string] _) => Type.map,
                 (ref Entry _) => Type.entry, (ref Err _) => Type.err,);
     }
 }
