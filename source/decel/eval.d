@@ -44,6 +44,10 @@ class EvalException : Exception
 /// The opening '(' has already been consumed; the macro must consume ')'.
 alias Macro = Value delegate(ref Parser parser);
 
+/// A method macro receives the target object and the parser.
+/// The opening '(' has already been consumed; the macro must consume ')'.
+alias MethodMacro = Value delegate(Value target, ref Parser parser);
+
 /// Evaluate a CEL expression string against a context.
 Value evaluate(string source, Context ctx)
 {
@@ -68,6 +72,7 @@ private struct Parser
     Context ctx;
     size_t pos;
     Macro[string] macros;
+    MethodMacro[string] methodMacros;
 
     this(Token[] tokens, Context ctx, Macro[string] macros)
     {
@@ -75,6 +80,7 @@ private struct Parser
         this.ctx = ctx;
         this.pos = 0;
         this.macros = macros is null ? builtinMacros() : merge(builtinMacros(), macros);
+        this.methodMacros = builtinMethodMacros();
     }
 
     /// Current token.
@@ -154,6 +160,12 @@ private struct Parser
                 if (peek().kind == Token.Kind.lparen)
                 {
                     advance();
+                    // Check method macros first — they handle their own arg parsing
+                    if (auto mm = ident.text in methodMacros)
+                    {
+                        lhs = (*mm)(lhs, this);
+                        continue;
+                    }
                     auto args = parseArgList();
                     expect(Token.Kind.rparen);
                     lhs = evalMethod(lhs, ident.text, args);
@@ -962,6 +974,206 @@ private Macro[string] builtinMacros()
     return m;
 }
 
+/// Built-in method macros for comprehensions.
+private MethodMacro[string] builtinMethodMacros()
+{
+    MethodMacro[string] m;
+    m["all"] = (Value target, ref Parser p) => macroAll(target, p);
+    m["exists"] = (Value target, ref Parser p) => macroExists(target, p);
+    m["exists_one"] = (Value target, ref Parser p) => macroExistsOne(target, p);
+    m["map"] = (Value target, ref Parser p) => macroMap(target, p);
+    m["filter"] = (Value target, ref Parser p) => macroFilter(target, p);
+    return m;
+}
+
+/// Parse a comprehension's arguments: binder identifier, comma, body expression.
+/// Returns the token range for the body so it can be re-evaluated per element.
+/// The opening '(' has been consumed; this consumes through ')'.
+private struct ComprehensionArgs
+{
+    /// Name of the iteration variable.
+    string binder;
+    /// Saved token range for the body expression (start index, end index).
+    size_t bodyStart;
+    size_t bodyEnd;
+}
+
+private ComprehensionArgs parseComprehensionArgs(ref Parser parser)
+{
+    ComprehensionArgs args;
+    // Parse binder: must be an identifier
+    auto binderTok = parser.expect(Token.Kind.ident);
+    args.binder = binderTok.text;
+    parser.expect(Token.Kind.comma);
+    // Record start of body expression
+    args.bodyStart = parser.pos;
+    // Parse through the body to find ')' — this consumes the tokens
+    parser.parseExpr(0);
+    args.bodyEnd = parser.pos;
+    parser.expect(Token.Kind.rparen);
+    return args;
+}
+
+/// Evaluate a saved body expression with a binder variable injected into context.
+private Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)
+{
+    // Create a sub-parser that re-parses the body tokens with the binder in scope
+    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd] ~ [
+        Token(Token.Kind.eof, "", 0)
+    ];
+
+    // Build a context that layers the binder on top of the original
+    auto outerCtx = parser.ctx;
+    Context innerCtx = (string name) {
+        if (name == args.binder)
+            return element;
+        return outerCtx(name);
+    };
+
+    auto subParser = Parser(bodyTokens, innerCtx, parser.macros);
+    return subParser.parseExpr(0);
+}
+
+/// `list.all(x, x > 0)` — true if body is true for all elements.
+private Value macroAll(Value target, ref Parser parser)
+{
+    if (isErr(target))
+    {
+        // Still need to parse through the arguments
+        cast(void) parseComprehensionArgs(parser);
+        return target;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return Value.err(".all() requires a list");
+    }
+
+    auto args = parseComprehensionArgs(parser);
+    foreach (ref elem; list.get)
+    {
+        auto result = evalBody(parser, args, elem);
+        if (isErr(result))
+            return result;
+        if (isFalsy(result))
+            return Value(false);
+    }
+    return Value(true);
+}
+
+/// `list.exists(x, x > 0)` — true if body is true for at least one element.
+private Value macroExists(Value target, ref Parser parser)
+{
+    if (isErr(target))
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return target;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return Value.err(".exists() requires a list");
+    }
+
+    auto args = parseComprehensionArgs(parser);
+    foreach (ref elem; list.get)
+    {
+        auto result = evalBody(parser, args, elem);
+        if (isErr(result))
+            return result;
+        if (isTruthy(result))
+            return Value(true);
+    }
+    return Value(false);
+}
+
+/// `list.exists_one(x, x > 0)` — true if body is true for exactly one element.
+private Value macroExistsOne(Value target, ref Parser parser)
+{
+    if (isErr(target))
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return target;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return Value.err(".exists_one() requires a list");
+    }
+
+    auto args = parseComprehensionArgs(parser);
+    int count = 0;
+    foreach (ref elem; list.get)
+    {
+        auto result = evalBody(parser, args, elem);
+        if (isErr(result))
+            return result;
+        if (isTruthy(result))
+            count++;
+        if (count > 1)
+            return Value(false); // early exit: more than one
+    }
+    return Value(count == 1);
+}
+
+/// `list.map(x, x * 2)` — transform each element.
+private Value macroMap(Value target, ref Parser parser)
+{
+    if (isErr(target))
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return target;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return Value.err(".map() requires a list");
+    }
+
+    auto args = parseComprehensionArgs(parser);
+    Value[] result;
+    foreach (ref elem; list.get)
+    {
+        auto mapped = evalBody(parser, args, elem);
+        if (isErr(mapped))
+            return mapped;
+        result ~= mapped;
+    }
+    return Value(result);
+}
+
+/// `list.filter(x, x > 0)` — keep elements where body is true.
+private Value macroFilter(Value target, ref Parser parser)
+{
+    if (isErr(target))
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return target;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(parser);
+        return Value.err(".filter() requires a list");
+    }
+
+    auto args = parseComprehensionArgs(parser);
+    Value[] result;
+    foreach (ref elem; list.get)
+    {
+        auto pred = evalBody(parser, args, elem);
+        if (isErr(pred))
+            return pred;
+        if (isTruthy(pred))
+            result ~= elem;
+    }
+    return Value(result);
+}
+
 /// Merge two macro tables, with user macros overriding builtins.
 private Macro[string] merge(Macro[string] base, Macro[string] overrides)
 {
@@ -1416,6 +1628,81 @@ unittest
         return Value(true);
     };
     evaluateWithMacros(`always(1 + 2)`, emptyContext(), customs).should.be(value(true));
+}
+
+@("Eval: list.all() comprehension")
+unittest
+{
+    import dshould;
+
+    evaluate("[1, 2, 3].all(x, x > 0)", emptyContext()).should.be(value(true));
+    evaluate("[1, 2, 3].all(x, x > 2)", emptyContext()).should.be(value(false));
+    evaluate("[].all(x, x > 0)", emptyContext()).should.be(value(true)); // vacuous truth
+}
+
+@("Eval: list.exists() comprehension")
+unittest
+{
+    import dshould;
+
+    evaluate("[1, 2, 3].exists(x, x == 2)", emptyContext()).should.be(value(true));
+    evaluate("[1, 2, 3].exists(x, x > 5)", emptyContext()).should.be(value(false));
+    evaluate("[].exists(x, x > 0)", emptyContext()).should.be(value(false));
+}
+
+@("Eval: list.exists_one() comprehension")
+unittest
+{
+    import dshould;
+
+    evaluate("[1, 2, 3].exists_one(x, x == 2)", emptyContext()).should.be(value(true));
+    evaluate("[1, 2, 3].exists_one(x, x > 1)", emptyContext()).should.be(value(false)); // 2 and 3
+    evaluate("[1, 2, 3].exists_one(x, x > 5)", emptyContext()).should.be(value(false));
+}
+
+@("Eval: list.map() comprehension")
+unittest
+{
+    import dshould;
+
+    evaluate("[1, 2, 3].map(x, x * 2)", emptyContext()).should.be(value([
+        value(2L), value(4L), value(6L)
+    ]));
+    evaluate("[].map(x, x + 1)", emptyContext()).should.be(value(cast(Value[])[]));
+}
+
+@("Eval: list.filter() comprehension")
+unittest
+{
+    import dshould;
+
+    evaluate("[1, 2, 3, 4, 5].filter(x, x > 3)", emptyContext()).should.be(
+            value([value(4L), value(5L)]));
+    evaluate("[1, 2, 3].filter(x, x > 5)", emptyContext()).should.be(value(cast(Value[])[
+    ]));
+}
+
+@("Eval: comprehension with context variables")
+unittest
+{
+    import dshould;
+
+    auto ctx = contextFrom(["threshold": value(2L)]);
+    evaluate("[1, 2, 3, 4].filter(x, x > threshold)", ctx).should.be(value([
+        value(3L), value(4L)
+    ]));
+    evaluate("[1, 2, 3].all(x, x > threshold)", ctx).should.be(value(false));
+    evaluate("[3, 4, 5].all(x, x > threshold)", ctx).should.be(value(true));
+}
+
+@("Eval: chained comprehensions")
+unittest
+{
+    import dshould;
+
+    // map then filter
+    evaluate("[1, 2, 3, 4].map(x, x * 2).filter(y, y > 4)", emptyContext()).should.be(
+            value([value(6L), value(8L)]));
 }
 
 @("Eval: error propagation")

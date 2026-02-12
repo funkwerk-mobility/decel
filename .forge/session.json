@@ -1095,6 +1095,60 @@
       "streaming": true,
       "actual_cost": null,
       "generation_id": "gen-1770917724-j37qcVOhvljeMCLw2pXE"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917849956.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917849956.json",
+      "timestamp": 1770917849.9578001,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.34157625,
+      "generation_id": "gen-1770917850-MVjtR0TS3aBggVNmG2Rt"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917863405.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917863405.json",
+      "timestamp": 1770917863.4065604,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.25347125,
+      "generation_id": "gen-1770917863-PZML4yeJUWgYnTaOXceO"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917874674.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917874674.json",
+      "timestamp": 1770917874.6754284,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.02636775,
+      "generation_id": "gen-1770917874-HFNlSqsjQ73WrCT4eTCT"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917881521.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917881521.json",
+      "timestamp": 1770917881.5226462,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.137332,
+      "generation_id": "gen-1770917881-rUvbvRkVb1eRFJle5gp4"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917946019.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917946019.json",
+      "timestamp": 1770917946.0211382,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.07612925,
+      "generation_id": "gen-1770917946-2DEhBAjJExqII9cpDAVd"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770917955561.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770917955561.json",
+      "timestamp": 1770917955.5632782,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.24305825,
+      "generation_id": "gen-1770917955-hgGKLqStTTT81WYI9bX1"
     }
   ],
   "messages": [
@@ -3446,6 +3500,193 @@
         {
           "commit": "7dc0362ad23f",
           "message": "Committed: 4 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: bd46d0c1",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "ooh, has works? Nice, so we can do all/any/etc now?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nYes! The macro system makes this straightforward. A comprehension macro like `list.all(x, x > 0)` needs to:\n\n1. Parse the binder name (`x`)\n2. Parse the body expression (`x > 0`) \n3. Iterate the list, evaluating the body with `x` bound to each element\n\nThe trick is that these are *method-style* macros (`obj.all(...)`) not function-style (`all(...)`). So I need to extend the macro system to support method macros too. Let me implement `all`, `exists`, `map`, and `filter`:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"from_id\": \"155\", \"to_id\": \"168\", \"summary\": \"Added Value.opEquals (deep recursive equality for all types), Value.toHash (@trusted nothrow), macro system (Macro alias = Value delegate(ref Parser)), builtinMacros() with has(), evaluateWithMacros() public API, list membership via deep equality in evalIn. Fixed dfmt issues by using local variables in valueEquals. Fixed &macroHas function-to-delegate with lambda wrapper. All 36 tests pass, lint clean. Committed 7dc0362a.\"}",
+            "name": "compact"
+          },
+          "id": "toolu_01YNvjCXc8YhBMcBNagQbRk8",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_01YNvjCXc8YhBMcBNagQbRk8",
+      "content": "{\"compact\": true, \"from_id\": \"155\", \"success\": true, \"summary\": \"Added Value.opEquals (deep recursive equality for all types), Value.toHash (@trusted nothrow), macro system (Macro alias = Value delegate(ref Parser)), builtinMacros() with has(), evaluateWithMacros() public API, list membership via deep equality in evalIn. Fixed dfmt issues by using local variables in valueEquals. Fixed &macroHas function-to-delegate with lambda wrapper. All 36 tests pass, lint clean. Committed 7dc0362a.\", \"to_id\": \"168\"}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "Now I need to implement comprehension macros (`all`, `exists`, `exists_one`, `map`, `filter`). These are *method-style* macros \u2014 `list.all(x, x > 0)` \u2014 so they need a different dispatch path than function-style macros like `has()`.\n\nThe approach:\n1. Add a `MethodMacro` alias \u2014 takes the target object + parser\n2. Add `builtinMethodMacros()` with `all`, `exists`, `exists_one`, `map`, `filter`\n3. Hook them into the member-access dispatch in `parseExpr`\n4. Each comprehension: parse binder name, consume comma, evaluate body expr for each element with binder in scope\n\nLet me also load test_runner.d to update the module list:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"add\": [\"source/decel/test_runner.d\"]}",
+            "name": "update_context"
+          },
+          "id": "toolu_01R2S3my4efX4h5RXETEjS62",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_01R2S3my4efX4h5RXETEjS62",
+      "content": "{\"error\": \"File not found: source/decel/test_runner.d\", \"success\": false}",
+      "_skip_display": true
+    },
+    {
+      "role": "system",
+      "content": "\u274c **update_context** failed: File not found: source/decel/test_runner.d",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me find the test runner file path:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"pattern\": \"runTestsMain\"}",
+            "name": "grep_context"
+          },
+          "id": "toolu_01Nzto1uuVw5zVLciV88Tj3S",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_01Nzto1uuVw5zVLciV88Tj3S",
+      "content": "{\"message\": \"Found 1 matches\", \"output\": \"\\u2500\\u2500 source/test_runner.d:5 \\u2500\\u2500\\n       2 | \\n       3 | import unit_threaded;\\n       4 | \\n>>>    5 | mixin runTestsMain!(\\\"decel\\\", \\\"decel.value\\\", \\\"decel.context\\\", \\\"decel.eval\\\",\\n       6 |         \\\"decel.lexer\\\", \\\"decel.program\\\",);\\n       7 | \", \"side_effects\": [\"ephemeral_result\"], \"success\": true, \"total_matches\": 1}",
+      "_skip_display": true
+    },
+    {
+      "role": "system",
+      "content": "\ud83d\udd27 **Tool call:** `grep_context`\n```json\n{\n  \"pattern\": \"runTestsMain\"\n}\n```\n**Result:**\n```json\n{\n  \"message\": \"Found 1 matches\",\n  \"output\": \"\\u2500\\u2500 source/test_runner.d:5 \\u2500\\u2500\\n       2 | \\n       3 | import unit_threaded;\\n       4 | \\n>>>    5 | mixin runTestsMain!(\\\"decel\\\", \\\"decel.value\\\", \\\"decel.context\\\", \\\"decel.eval\\\",\\n       6 |         \\\"decel.lexer\\\", \\\"decel.program\\\",);\\n       7 | \",\n  \"side_effects\": [\n    \"ephemeral_result\"\n  ],\n  \"success\": true,\n  \"total_matches\": 1\n}\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood, test runner is at `source/test_runner.d`. Now let me implement comprehension macros. The key insight: these are **method-style** macros (`list.all(x, x > 0)`), so they get dispatched from the member-access path, not the function-call path. I need to:\n\n1. Add a `MethodMacro` type that takes the target object + parser\n2. Build `builtinMethodMacros()` with `all`, `exists`, `exists_one`, `map`, `filter`\n3. Hook into the `.ident(` dispatch in `parseExpr` to check method macros before regular arg parsing\n4. Each comprehension: parse binder ident, comma, then re-evaluate the body expression for each list element with the binder injected into context\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// A macro receives the parser to handle its own argument parsing.\n/// The opening '(' has already been consumed; the macro must consume ')'.\nalias Macro = Value delegate(ref Parser parser);\n</search>\n<replace>\n/// A macro receives the parser to handle its own argument parsing.\n/// The opening '(' has already been consumed; the macro must consume ')'.\nalias Macro = Value delegate(ref Parser parser);\n\n/// A method macro receives the target object and the parser.\n/// The opening '(' has already been consumed; the macro must consume ')'.\nalias MethodMacro = Value delegate(Value target, ref Parser parser);\n</replace>\n</edit>\n\nNow add the `methodMacros` field to Parser and initialize it:\n\n<edit file=\"source/decel/eval.d\">\n<search>\nprivate struct Parser\n{\n    Token[] tokens;\n    Context ctx;\n    size_t pos;\n    Macro[string] macros;\n\n    this(Token[] tokens, Context ctx, Macro[string] macros)\n    {\n        this.tokens = tokens;\n        this.ctx = ctx;\n        this.pos = 0;\n        this.macros = macros is null ? builtinMacros() : merge(builtinMacros(), macros);\n    }\n</search>\n<replace>\nprivate struct Parser\n{\n    Token[] tokens;\n    Context ctx;\n    size_t pos;\n    Macro[string] macros;\n    MethodMacro[string] methodMacros;\n\n    this(Token[] tokens, Context ctx, Macro[string] macros)\n    {\n        this.tokens = tokens;\n        this.ctx = ctx;\n        this.pos = 0;\n        this.macros = macros is null ? builtinMacros() : merge(builtinMacros(), macros);\n        this.methodMacros = builtinMethodMacros();\n    }\n</replace>\n</edit>\n\nNow hook method macros into the member-access dispatch:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n            // Member access: expr.ident\n            if (tok.kind == Token.Kind.dot)\n            {\n                advance();\n                auto ident = expect(Token.Kind.ident);\n\n                // Method call: expr.ident(args...)\n                if (peek().kind == Token.Kind.lparen)\n                {\n                    advance();\n                    auto args = parseArgList();\n                    expect(Token.Kind.rparen);\n                    lhs = evalMethod(lhs, ident.text, args);\n                }\n                else\n                {\n                    lhs = evalMember(lhs, ident.text);\n                }\n                continue;\n            }\n</search>\n<replace>\n            // Member access: expr.ident\n            if (tok.kind == Token.Kind.dot)\n            {\n                advance();\n                auto ident = expect(Token.Kind.ident);\n\n                // Method call: expr.ident(args...)\n                if (peek().kind == Token.Kind.lparen)\n                {\n                    advance();\n                    // Check method macros first \u2014 they handle their own arg parsing\n                    if (auto mm = ident.text in methodMacros)\n                    {\n                        lhs = (*mm)(lhs, this);\n                        continue;\n                    }\n                    auto args = parseArgList();\n                    expect(Token.Kind.rparen);\n                    lhs = evalMethod(lhs, ident.text, args);\n                }\n                else\n                {\n                    lhs = evalMember(lhs, ident.text);\n                }\n                continue;\n            }\n</replace>\n</edit>\n\nNow add the comprehension implementation \u2014 the `builtinMethodMacros` function and the generic comprehension helper:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// Built-in macros that ship with every evaluator.\nprivate Macro[string] builtinMacros()\n{\n    Macro[string] m;\n    m[\"has\"] = (ref Parser p) => macroHas(p);\n    return m;\n}\n</search>\n<replace>\n/// Built-in macros that ship with every evaluator.\nprivate Macro[string] builtinMacros()\n{\n    Macro[string] m;\n    m[\"has\"] = (ref Parser p) => macroHas(p);\n    return m;\n}\n\n/// Built-in method macros for comprehensions.\nprivate MethodMacro[string] builtinMethodMacros()\n{\n    MethodMacro[string] m;\n    m[\"all\"] = (Value target, ref Parser p) => macroAll(target, p);\n    m[\"exists\"] = (Value target, ref Parser p) => macroExists(target, p);\n    m[\"exists_one\"] = (Value target, ref Parser p) => macroExistsOne(target, p);\n    m[\"map\"] = (Value target, ref Parser p) => macroMap(target, p);\n    m[\"filter\"] = (Value target, ref Parser p) => macroFilter(target, p);\n    return m;\n}\n\n/// Parse a comprehension's arguments: binder identifier, comma, body expression.\n/// Returns the token range for the body so it can be re-evaluated per element.\n/// The opening '(' has been consumed; this consumes through ')'.\nprivate struct ComprehensionArgs\n{\n    /// Name of the iteration variable.\n    string binder;\n    /// Saved token range for the body expression (start index, end index).\n    size_t bodyStart;\n    size_t bodyEnd;\n}\n\nprivate ComprehensionArgs parseComprehensionArgs(ref Parser parser)\n{\n    ComprehensionArgs args;\n    // Parse binder: must be an identifier\n    auto binderTok = parser.expect(Token.Kind.ident);\n    args.binder = binderTok.text;\n    parser.expect(Token.Kind.comma);\n    // Record start of body expression\n    args.bodyStart = parser.pos;\n    // Parse through the body to find ')' \u2014 this consumes the tokens\n    parser.parseExpr(0);\n    args.bodyEnd = parser.pos;\n    parser.expect(Token.Kind.rparen);\n    return args;\n}\n\n/// Evaluate a saved body expression with a binder variable injected into context.\nprivate Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)\n{\n    // Create a sub-parser that re-parses the body tokens with the binder in scope\n    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd]\n        ~ [Token(Token.Kind.eof, \"\", 0)];\n\n    // Build a context that layers the binder on top of the original\n    auto outerCtx = parser.ctx;\n    Context innerCtx = (string name) {\n        if (name == args.binder)\n            return element;\n        return outerCtx(name);\n    };\n\n    auto subParser = Parser(bodyTokens, innerCtx, parser.macros);\n    return subParser.parseExpr(0);\n}\n\n/// `list.all(x, x > 0)` \u2014 true if body is true for all elements.\nprivate Value macroAll(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        // Still need to parse through the arguments\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".all() requires a list\");\n    }\n\n    auto args = parseComprehensionArgs(parser);\n    foreach (ref elem; list.get)\n    {\n        auto result = evalBody(parser, args, elem);\n        if (isErr(result))\n            return result;\n        if (isFalsy(result))\n            return Value(false);\n    }\n    return Value(true);\n}\n\n/// `list.exists(x, x > 0)` \u2014 true if body is true for at least one element.\nprivate Value macroExists(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".exists() requires a list\");\n    }\n\n    auto args = parseComprehensionArgs(parser);\n    foreach (ref elem; list.get)\n    {\n        auto result = evalBody(parser, args, elem);\n        if (isErr(result))\n            return result;\n        if (isTruthy(result))\n            return Value(true);\n    }\n    return Value(false);\n}\n\n/// `list.exists_one(x, x > 0)` \u2014 true if body is true for exactly one element.\nprivate Value macroExistsOne(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".exists_one() requires a list\");\n    }\n\n    auto args = parseComprehensionArgs(parser);\n    int count = 0;\n    foreach (ref elem; list.get)\n    {\n        auto result = evalBody(parser, args, elem);\n        if (isErr(result))\n            return result;\n        if (isTruthy(result))\n            count++;\n        if (count > 1)\n            return Value(false); // early exit: more than one\n    }\n    return Value(count == 1);\n}\n\n/// `list.map(x, x * 2)` \u2014 transform each element.\nprivate Value macroMap(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".map() requires a list\");\n    }\n\n    auto args = parseComprehensionArgs(parser);\n    Value[] result;\n    foreach (ref elem; list.get)\n    {\n        auto mapped = evalBody(parser, args, elem);\n        if (isErr(mapped))\n            return mapped;\n        result ~= mapped;\n    }\n    return Value(result);\n}\n\n/// `list.filter(x, x > 0)` \u2014 keep elements where body is true.\nprivate Value macroFilter(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".filter() requires a list\");\n    }\n\n    auto args = parseComprehensionArgs(parser);\n    Value[] result;\n    foreach (ref elem; list.get)\n    {\n        auto pred = evalBody(parser, args, elem);\n        if (isErr(pred))\n            return pred;\n        if (isTruthy(pred))\n            result ~= elem;\n    }\n    return Value(result);\n}\n</replace>\n</edit>\n\nNow add comprehensive tests for all comprehensions:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n@(\"Eval: error propagation\")\nunittest\n</search>\n<replace>\n@(\"Eval: list.all() comprehension\")\nunittest\n{\n    import dshould;\n\n    evaluate(\"[1, 2, 3].all(x, x > 0)\", emptyContext()).should.be(value(true));\n    evaluate(\"[1, 2, 3].all(x, x > 2)\", emptyContext()).should.be(value(false));\n    evaluate(\"[].all(x, x > 0)\", emptyContext()).should.be(value(true)); // vacuous truth\n}\n\n@(\"Eval: list.exists() comprehension\")\nunittest\n{\n    import dshould;\n\n    evaluate(\"[1, 2, 3].exists(x, x == 2)\", emptyContext()).should.be(value(true));\n    evaluate(\"[1, 2, 3].exists(x, x > 5)\", emptyContext()).should.be(value(false));\n    evaluate(\"[].exists(x, x > 0)\", emptyContext()).should.be(value(false));\n}\n\n@(\"Eval: list.exists_one() comprehension\")\nunittest\n{\n    import dshould;\n\n    evaluate(\"[1, 2, 3].exists_one(x, x == 2)\", emptyContext()).should.be(value(true));\n    evaluate(\"[1, 2, 3].exists_one(x, x > 1)\", emptyContext()).should.be(value(false)); // 2 and 3\n    evaluate(\"[1, 2, 3].exists_one(x, x > 5)\", emptyContext()).should.be(value(false));\n}\n\n@(\"Eval: list.map() comprehension\")\nunittest\n{\n    import dshould;\n\n    evaluate(\"[1, 2, 3].map(x, x * 2)\", emptyContext())\n        .should.be(value([value(2L), value(4L), value(6L)]));\n    evaluate(\"[].map(x, x + 1)\", emptyContext()).should.be(value(cast(Value[])[]));\n}\n\n@(\"Eval: list.filter() comprehension\")\nunittest\n{\n    import dshould;\n\n    evaluate(\"[1, 2, 3, 4, 5].filter(x, x > 3)\", emptyContext())\n        .should.be(value([value(4L), value(5L)]));\n    evaluate(\"[1, 2, 3].filter(x, x > 5)\", emptyContext()).should.be(value(cast(Value[])[]));\n}\n\n@(\"Eval: comprehension with context variables\")\nunittest\n{\n    import dshould;\n\n    auto ctx = contextFrom([\"threshold\": value(2L)]);\n    evaluate(\"[1, 2, 3, 4].filter(x, x > threshold)\", ctx)\n        .should.be(value([value(3L), value(4L)]));\n    evaluate(\"[1, 2, 3].all(x, x > threshold)\", ctx).should.be(value(false));\n    evaluate(\"[3, 4, 5].all(x, x > threshold)\", ctx).should.be(value(true));\n}\n\n@(\"Eval: chained comprehensions\")\nunittest\n{\n    import dshould;\n\n    // map then filter\n    evaluate(\"[1, 2, 3, 4].map(x, x * 2).filter(y, y > 4)\", emptyContext())\n        .should.be(value([value(6L), value(8L)]));\n}\n\n@(\"Eval: error propagation\")\nunittest\n</replace>\n</edit>\n\nNow update TODO.md to mark comprehensions as done:\n\n<edit file=\"TODO.md\">\n<search>\n- [ ] **Comprehensions / macros** \u2014 `list.all(x, x > 0)`, `list.exists(x, x > 0)`,\n      `list.map(x, x * 2)`, `list.filter(x, x > 0)`. These are macros in CEL,\n      not functions \u2014 the second argument is an expression, not a value.\n</search>\n<replace>\n- [x] **Comprehensions** \u2014 `list.all(x, x > 0)`, `list.exists(x, x > 0)`,\n      `list.exists_one(x, x == 2)`, `list.map(x, x * 2)`, `list.filter(x, x > 0)`.\n      Implemented as method macros that receive target + parser.\n</replace>\n</edit>\n\n<run_tests/>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `run_tests` failed:\n\ndfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-12 18:39:02.903918727 +0100\n+++ b/source/decel/eval.d\t2026-02-12 18:39:02.940553561 +0100\n@@ -1018,8 +1018,9 @@\n private Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)\n {\n     // Create a sub-parser that re-parses the body tokens with the binder in scope\n-    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd]\n-        ~ [Token(Token.Kind.eof, \"\", 0)];\n+    auto bodyTokens = parser.tokens[args.bodyStart .. args.bodyEnd] ~ [\n+        Token(Token.Kind.eof, \"\", 0)\n+    ];\n \n     // Build a context that layers the binder on top of the original\n     auto outerCtx = parser.ctx;\n@@ -1664,8 +1665,9 @@\n {\n     import dshould;\n \n-    evaluate(\"[1, 2, 3].map(x, x * 2)\", emptyContext())\n-        .should.be(value([value(2L), value(4L), value(6L)]));\n+    evaluate(\"[1, 2, 3].map(x, x * 2)\", emptyContext()).should.be(value([\n+            value(2L), value(4L), value(6L)\n+    ]));\n     evaluate(\"[].map(x, x + 1)\", emptyContext()).should.be(value(cast(Value[])[]));\n }\n \n@@ -1674,9 +1676,10 @@\n {\n     import dshould;\n \n-    evaluate(\"[1, 2, 3, 4, 5].filter(x, x > 3)\", emptyContext())\n-        .should.be(value([value(4L), value(5L)]));\n-    evaluate(\"[1, 2, 3].filter(x, x > 5)\", emptyContext()).should.be(value(cast(Value[])[]));\n+    evaluate(\"[1, 2, 3, 4, 5].filter(x, x > 3)\", emptyContext()).should.be(\n+            value([value(4L), value(5L)]));\n+    evaluate(\"[1, 2, 3].filter(x, x > 5)\", emptyContext()).should.be(value(cast(Value[])[\n+    ]));\n }\n \n @(\"Eval: comprehension with context variables\")\n@@ -1685,8 +1688,9 @@\n     import dshould;\n \n     auto ctx = contextFrom([\"threshold\": value(2L)]);\n-    evaluate(\"[1, 2, 3, 4].filter(x, x > threshold)\", ctx)\n-        .should.be(value([value(3L), value(4L)]));\n+    evaluate(\"[1, 2, 3, 4].filter(x, x > threshold)\", ctx).should.be(value([\n+            value(3L), value(4L)\n+    ]));\n     evaluate(\"[1, 2, 3].all(x, x > threshold)\", ctx).should.be(value(false));\n     evaluate(\"[3, 4, 5].all(x, x > threshold)\", ctx).should.be(value(true));\n }\n@@ -1697,8 +1701,8 @@\n     import dshould;\n \n     // map then filter\n-    evaluate(\"[1, 2, 3, 4].map(x, x * 2).filter(y, y > 4)\", emptyContext())\n-        .should.be(value([value(6L), value(8L)]));\n+    evaluate(\"[1, 2, 3, 4].map(x, x * 2).filter(y, y > 4)\", emptyContext()).should.be(\n+            value([value(6L), value(8L)]));\n }\n \n @(\"Eval: error propagation\")\ndecel.eval.Eval: comparison operators:\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: unknown variable from context:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.eval.Eval: ternary conditional:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: string literals:\ndecel.eval.Eval: string operations:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: unary minus:\ndecel.program.Program: eval returns correct result:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: list.exists() comprehension:\n\nTime taken: 1 ms, 389 \u03bcs, and 1 hnsec\n44 test(s) run, 0 failed.\n\nOK!\n\nsource/decel/eval.d(1043:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1049:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1070:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1076:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1097:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1103:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1127:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1133:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1154:9)[warn]: Function return value is discarded\nsource/decel/eval.d(1160:9)[warn]: Function return value is discarded\n\n--- stderr ---\nmake: *** [Makefile:47: lint] Fehler 1\n",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nAll 44 tests pass! Two issues to fix:\n\n1. **dfmt formatting** \u2014 need to match dfmt's preferred style\n2. **dscanner \"return value discarded\"** \u2014 the `parseComprehensionArgs` calls in error/non-list branches discard the result. Need to assign or cast to void.\n\nLet me fix both. First, let me see what's at the warning lines:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"filepath\": \"source/decel/eval.d\", \"line\": 1043, \"context\": 20}",
+            "name": "get_lines"
+          },
+          "id": "toolu_01TSMffaQTW7eNVNTcCRBiCT",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_01TSMffaQTW7eNVNTcCRBiCT",
+      "content": "{\"content\": \"    1023 |     ];\\n    1024 | \\n    1025 |     // Build a context that layers the binder on top of the original\\n    1026 |     auto outerCtx = parser.ctx;\\n    1027 |     Context innerCtx = (string name) {\\n    1028 |         if (name == args.binder)\\n    1029 |             return element;\\n    1030 |         return outerCtx(name);\\n    1031 |     };\\n    1032 | \\n    1033 |     auto subParser = Parser(bodyTokens, innerCtx, parser.macros);\\n    1034 |     return subParser.parseExpr(0);\\n    1035 | }\\n    1036 | \\n    1037 | /// `list.all(x, x > 0)` \\u2014 true if body is true for all elements.\\n    1038 | private Value macroAll(Value target, ref Parser parser)\\n    1039 | {\\n    1040 |     if (isErr(target))\\n    1041 |     {\\n    1042 |         // Still need to parse through the arguments\\n>>> 1043 |         parseComprehensionArgs(parser);\\n    1044 |         return target;\\n    1045 |     }\\n    1046 |     auto list = tryGet!(Value[])(target);\\n    1047 |     if (list.isNull)\\n    1048 |     {\\n    1049 |         parseComprehensionArgs(parser);\\n    1050 |         return Value.err(\\\".all() requires a list\\\");\\n    1051 |     }\\n    1052 | \\n    1053 |     auto args = parseComprehensionArgs(parser);\\n    1054 |     foreach (ref elem; list.get)\\n    1055 |     {\\n    1056 |         auto result = evalBody(parser, args, elem);\\n    1057 |         if (isErr(result))\\n    1058 |             return result;\\n    1059 |         if (isFalsy(result))\\n    1060 |             return Value(false);\\n    1061 |     }\\n    1062 |     return Value(true);\\n    1063 | }\", \"filepath\": \"source/decel/eval.d\", \"range\": \"1023-1063\", \"side_effects\": [\"ephemeral_result\"], \"success\": true, \"target_line\": 1043, \"total_lines\": 1723}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLooking at the test output, all 44 tests pass but there are two issues:\n1. **dfmt formatting** \u2014 already applied in the file I see in context (dfmt's preferred style is already there)\n2. **dscanner \"Function return value is discarded\"** \u2014 the `parseComprehensionArgs(parser)` calls in the error/non-list branches discard the return value\n\nThe fix: use `cast(void)` to explicitly discard, which tells dscanner we intentionally ignore the return value. Also need to add `discarded_return_value_check` to dscanner.ini, or just use `cast(void)`. Let me fix both approaches \u2014 `cast(void)` is more explicit and self-documenting:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// `list.all(x, x > 0)` \u2014 true if body is true for all elements.\nprivate Value macroAll(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        // Still need to parse through the arguments\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".all() requires a list\");\n    }\n</search>\n<replace>\n/// `list.all(x, x > 0)` \u2014 true if body is true for all elements.\nprivate Value macroAll(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        // Still need to parse through the arguments\n        cast(void) parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return Value.err(\".all() requires a list\");\n    }\n</replace>\n</edit>\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// `list.exists(x, x > 0)` \u2014 true if body is true for at least one element.\nprivate Value macroExists(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".exists() requires a list\");\n    }\n</search>\n<replace>\n/// `list.exists(x, x > 0)` \u2014 true if body is true for at least one element.\nprivate Value macroExists(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return Value.err(\".exists() requires a list\");\n    }\n</replace>\n</edit>\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// `list.exists_one(x, x > 0)` \u2014 true if body is true for exactly one element.\nprivate Value macroExistsOne(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".exists_one() requires a list\");\n    }\n</search>\n<replace>\n/// `list.exists_one(x, x > 0)` \u2014 true if body is true for exactly one element.\nprivate Value macroExistsOne(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return Value.err(\".exists_one() requires a list\");\n    }\n</replace>\n</edit>\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// `list.map(x, x * 2)` \u2014 transform each element.\nprivate Value macroMap(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".map() requires a list\");\n    }\n</search>\n<replace>\n/// `list.map(x, x * 2)` \u2014 transform each element.\nprivate Value macroMap(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return Value.err(\".map() requires a list\");\n    }\n</replace>\n</edit>\n\n<edit file=\"source/decel/eval.d\">\n<search>\n/// `list.filter(x, x > 0)` \u2014 keep elements where body is true.\nprivate Value macroFilter(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        parseComprehensionArgs(parser);\n        return Value.err(\".filter() requires a list\");\n    }\n</search>\n<replace>\n/// `list.filter(x, x > 0)` \u2014 keep elements where body is true.\nprivate Value macroFilter(Value target, ref Parser parser)\n{\n    if (isErr(target))\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return target;\n    }\n    auto list = tryGet!(Value[])(target);\n    if (list.isNull)\n    {\n        cast(void) parseComprehensionArgs(parser);\n        return Value.err(\".filter() requires a list\");\n    }\n</replace>\n</edit>\n\n<run_tests/>\n<commit message=\"Add list comprehension macros: all, exists, exists_one, map, filter\n\nImplemented as method macros that receive the target object and parser.\nEach comprehension parses a binder identifier and body expression, then\nre-evaluates the body for each list element with the binder in scope.\n\nSupports chaining (e.g., list.map(x, x*2).filter(y, y>4)) and\ncontext variable access within comprehension bodies.\n\nAlso fixes dscanner warnings for discarded return values.\"/>\n\nAll 44 tests should pass with zero lint warnings. The comprehension macros work by:\n\n1. **Parsing phase**: `parseComprehensionArgs` captures the binder name and the token range of the body expression\n2. **Evaluation phase**: `evalBody` creates a sub-parser over the saved token range, with a layered context that injects the binder variable\n3. **Per-element**: The body is re-parsed and re-evaluated for each list element\n\nThis enables chaining (`list.map(x, x*2).filter(y, y>4)`) and access to outer context variables (`list.filter(x, x > threshold)`).",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-12 18:39:43.469480646 +0100\n+++ b/source/decel/eval.d\t2026-02-12 18:39:43.506104129 +0100\n@@ -1666,7 +1666,7 @@\n     import dshould;\n \n     evaluate(\"[1, 2, 3].map(x, x * 2)\", emptyContext()).should.be(value([\n-            value(2L), value(4L), value(6L)\n+        value(2L), value(4L), value(6L)\n     ]));\n     evaluate(\"[].map(x, x + 1)\", emptyContext()).should.be(value(cast(Value[])[]));\n }\n@@ -1689,7 +1689,7 @@\n \n     auto ctx = contextFrom([\"threshold\": value(2L)]);\n     evaluate(\"[1, 2, 3, 4].filter(x, x > threshold)\", ctx).should.be(value([\n-            value(3L), value(4L)\n+        value(3L), value(4L)\n     ]));\n     evaluate(\"[1, 2, 3].all(x, x > threshold)\", ctx).should.be(value(false));\n     evaluate(\"[3, 4, 5].all(x, x > threshold)\", ctx).should.be(value(true));\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: logical operators:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: unary minus:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: nested member access:\n\nTime taken: 1 ms, 298 \u03bcs, and 6 hnsecs\n44 test(s) run, 0 failed.\n\nOK!\n\n",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-12 18:39:43.469480646 +0100\n+++ b/source/decel/eval.d\t2026-02-12 18:39:43.506104129 +0100\n@@ -1666,7 +1666,7 @@\n     import dshould;\n \n     evaluate(\"[1, 2, 3].map(x, x * 2)\", emptyContext()).should.be(value([\n-            value(2L), value(4L), value(6L)\n+        value(2L), value(4L), value(6L)\n     ]));\n     evaluate(\"[].map(x, x + 1)\", emptyContext()).should.be(value(cast(Value[])[]));\n }\n@@ -1689,7 +1689,7 @@\n \n     auto ctx = contextFrom([\"threshold\": value(2L)]);\n     evaluate(\"[1, 2, 3, 4].filter(x, x > threshold)\", ctx).should.be(value([\n-            value(3L), value(4L)\n+        value(3L), value(4L)\n     ]));\n     evaluate(\"[1, 2, 3].all(x, x > threshold)\", ctx).should.be(value(false));\n     evaluate(\"[3, 4, 5].all(x, x > threshold)\", ctx).should.be(value(true));\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: logical operators:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.program.Program: eval returns correct result:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: unary minus:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: nested member access:\n\nTime taken: 1 ms, 298 \u03bcs, and 6 hnsecs\n44 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "files_modified",
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "a7eea753ba18",
+          "message": "Committed: 2 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],

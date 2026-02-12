@@ -77,9 +77,9 @@
 
 ### Lower Priority
 
-- [ ] **Comprehensions / macros** — `list.all(x, x > 0)`, `list.exists(x, x > 0)`,
-      `list.map(x, x * 2)`, `list.filter(x, x > 0)`. These are macros in CEL,
-      not functions — the second argument is an expression, not a value.
+- [x] **Comprehensions** — `list.all(x, x > 0)`, `list.exists(x, x > 0)`,
+      `list.exists_one(x, x == 2)`, `list.map(x, x * 2)`, `list.filter(x, x > 0)`.
+      Implemented as method macros that receive target + parser.
 
 - [ ] **Custom functions** — User-registered functions via `Env`. Need a
       registration API and dispatch mechanism.
