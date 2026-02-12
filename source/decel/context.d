@@ -7,12 +7,12 @@ import decel.value;
 
 /// A Context resolves top-level identifiers to Values.
 /// It is simply a callable that maps names to values.
-alias Context = Value delegate(string name) @nogc nothrow;
+alias Context = Value delegate(string name);
 
 /// Create a context from an associative array (useful for tests).
 Context contextFrom(Value[string] bindings)
 {
-    return (string name) @nogc nothrow{
+    return (string name) {
         if (auto p = name in bindings)
             return *p;
         return Value.err("undefined");
@@ -22,7 +22,7 @@ Context contextFrom(Value[string] bindings)
 /// Empty context that resolves nothing.
 Context emptyContext()
 {
-    return (string) @nogc nothrow => Value.err("undefined");
+    return (string) => Value.err("undefined");
 }
 
 @("Context: resolve bindings")

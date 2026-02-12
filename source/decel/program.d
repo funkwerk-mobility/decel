@@ -7,14 +7,14 @@ import decel.context;
 import decel.value;
 
 /// A compiled CEL program. Produced by Env.compile().
-/// Evaluation against a Context should be @nogc on an existing Value tree.
+/// Evaluate against a Context to get a result Value.
 struct Program
 {
     /// The original source expression. TODO: replace with AST.
     string source;
 
     /// Evaluate this program against the given context.
-    Value eval(Context ctx) @nogc nothrow
+    Value eval(Context ctx)
     {
         // TODO: walk AST, evaluate @nogc using ctx
         cast(void) ctx;

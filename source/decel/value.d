@@ -9,7 +9,7 @@ import std.sumtype;
 abstract class Entry
 {
     /// Resolve a named field on this entry.
-    Value resolve(string name) @nogc nothrow;
+    Value resolve(string name);
 }
 
 /// A key-value pair for CEL map values.
@@ -71,7 +71,7 @@ struct Value
     }
 
     /// Convenience: null value.
-    static Value null_() @nogc nothrow
+    static Value null_()
     {
         Value v;
         v.inner = Inner(null);
@@ -79,7 +79,7 @@ struct Value
     }
 
     /// Convenience: error value.
-    static Value err(string msg) @nogc nothrow
+    static Value err(string msg)
     {
         Value v;
         v.inner = Inner(Err(msg));
@@ -87,7 +87,7 @@ struct Value
     }
 
     /// Returns the type tag for this value.
-    Type type() @nogc nothrow
+    Type type()
     {
         // Use explicit ref handlers to avoid SumType matching ambiguities.
         return inner.match!((ref typeof(null) _) => Type.null_,
