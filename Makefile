@@ -29,8 +29,15 @@ unittest: ## Run unit tests via unit-threaded
 
 # ── Formatting ───────────────────────────────────────────────────────
 
-format: ## Format source code with dfmt
-	@find $(SOURCE_DIR) -name '*.d' | xargs $(DFMT) -i
+format: ## Format source code with dfmt (shows diff of changes)
+	@for f in $$(find $(SOURCE_DIR) -name '*.d'); do \
+		before=$$(cat "$$f"); \
+		$(DFMT) -i "$$f"; \
+		after=$$(cat "$$f"); \
+		if [ "$$before" != "$$after" ]; then \
+			echo "dfmt reformatted: $$f"; \
+		fi; \
+	done
 
 
 
