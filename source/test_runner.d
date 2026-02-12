@@ -3,6 +3,4 @@
  +/
 import unit_threaded;
 
-mixin runTestsMain!(
-    "decel",
-);
+mixin runTestsMain!("decel",);

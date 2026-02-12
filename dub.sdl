@@ -6,14 +6,8 @@ license "BSL-1.0"
 targetType "library"
 targetPath "build/lib"
 
-sourcePaths ["source"]
-importPaths ["source"]
-
-buildTypes {
-	unittest {
-		dflags ["-unittest"]
-	}
-}
+sourcePaths "source"
+importPaths "source"
 
 configuration "library" {
 	targetType "library"
@@ -24,7 +18,5 @@ configuration "unittest" {
 	targetPath "build/test"
 	mainSourceFile "source/test_runner.d"
 
-	dependency "unit-threaded" {
-		version "~>2.1"
-	}
+	dependency "unit-threaded" version="~>2.1"
 }

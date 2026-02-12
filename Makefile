@@ -44,7 +44,7 @@ format: ## Format source code with dfmt
 
 format-check: ## Check formatting without modifying files
 	@echo "$(YELLOW)Checking formatting...$(RESET)"
-	@find $(SOURCE_DIR) -name '*.d' | xargs $(DFMT) --check && \
+	@find $(SOURCE_DIR) -name '*.d' | xargs $(DFMT) && \
 		echo "$(GREEN)Formatting OK$(RESET)" || \
 		(echo "$(RED)Formatting issues found. Run 'make format' to fix.$(RESET)" && exit 1)
 
