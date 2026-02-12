@@ -178,10 +178,12 @@ private struct Parser
 
             // Binary operator
             advance();
-            // Logical && and || short-circuit.
-            // Note: we use skip-mode rather than try/catch because
-            // dshould/unit-threaded invoke tests via @nogc delegates,
-            // which prevents catching exceptions that allocate.
+            // Logical && and || use skip-mode for short-circuit.
+            // We can't use try/catch here because catching an exception
+            // from a recursive-descent parser leaves the token position
+            // corrupted — the throwing sub-expression is only partially
+            // consumed, so subsequent parsing sees leftover tokens.
+            // Skip-mode advances through all tokens without evaluating.
             if (tok.kind == Token.Kind.ampAmp)
             {
                 if (isFalsy(lhs))
@@ -1306,55 +1308,4 @@ unittest
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
     // true || (error) should not throw
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
-}
-
-@("Eval: try-catch sanity check")
-unittest
-{
-    import std.sumtype : match;
-
-    // 1. Basic: can we catch EvalException?
-    bool caught1 = false;
-    try
-    {
-        evaluate("1/0", emptyContext());
-    }
-    catch (EvalException)
-    {
-        caught1 = true;
-    }
-    assert(caught1, "Basic catch failed!");
-
-    // 2. Catch through a match call
-    bool caught2 = false;
-    try
-    {
-        auto v = evaluate("1 + 2", emptyContext());
-        // Do a match, then evaluate something that throws
-        v.inner.match!((ref long i) => i, (ref _) => 0L,);
-        evaluate("1/0", emptyContext());
-    }
-    catch (EvalException)
-    {
-        caught2 = true;
-    }
-    assert(caught2, "Catch after match failed!");
-
-    // 3. The actual pattern: evaluate false, then try to evaluate the erroring expr
-    bool caught3 = false;
-    try
-    {
-        auto lhs = evaluate("false", emptyContext());
-        auto isFalse = lhs.inner.match!((ref bool b) => !b, (ref _) => false,);
-        if (isFalse)
-        {
-            // This is what short-circuit would do with try/catch
-            evaluate("1/0", emptyContext());
-        }
-    }
-    catch (EvalException)
-    {
-        caught3 = true;
-    }
-    assert(caught3, "Catch in short-circuit pattern failed!");
 }
