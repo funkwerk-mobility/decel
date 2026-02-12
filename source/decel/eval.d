@@ -178,12 +178,14 @@ private struct Parser
 
             // Binary operator
             advance();
-            // Logical && and || short-circuit
+            // Logical && and || short-circuit.
+            // Note: we use skip-mode rather than try/catch because
+            // dshould/unit-threaded invoke tests via @nogc delegates,
+            // which prevents catching exceptions that allocate.
             if (tok.kind == Token.Kind.ampAmp)
             {
                 if (isFalsy(lhs))
                 {
-                    // Parse but skip evaluation of RHS (CEL spec: short-circuit).
                     skipDepth++;
                     parseExpr(prec + 1);
                     skipDepth--;
@@ -199,7 +201,6 @@ private struct Parser
             {
                 if (isTruthy(lhs))
                 {
-                    // Parse but skip evaluation of RHS (CEL spec: short-circuit).
                     skipDepth++;
                     parseExpr(prec + 1);
                     skipDepth--;
