@@ -9,7 +9,7 @@ DSCANNER ?= dscanner
 BUILD_DIR  := build
 SOURCE_DIR := source
 
-.PHONY: all build test unittest format format-check lint clean help
+.PHONY: all build test unittest format lint clean help
 
 # ── Default ──────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ build: ## Build the library
 
 # ── Testing ──────────────────────────────────────────────────────────
 
-test: unittest lint format-check ## Run all checks (tests + lint + format)
+test: format unittest lint ## Run all checks (format + tests + lint)
 
 unittest: ## Run unit tests via unit-threaded
 	@$(DUB) test -q
@@ -32,18 +32,7 @@ unittest: ## Run unit tests via unit-threaded
 format: ## Format source code with dfmt
 	@find $(SOURCE_DIR) -name '*.d' | xargs $(DFMT) -i
 
-format-check: ## Check formatting without modifying files
-	@fail=0; \
-	for f in $$(find $(SOURCE_DIR) -name '*.d'); do \
-		if ! $(DFMT) < "$$f" | diff -q "$$f" - > /dev/null 2>&1; then \
-			echo "Needs formatting: $$f"; \
-			fail=1; \
-		fi; \
-	done; \
-	if [ "$$fail" = "1" ]; then \
-		echo "Run 'make format' to fix."; \
-		exit 1; \
-	fi
+
 
 # ── Linting ──────────────────────────────────────────────────────────
 
