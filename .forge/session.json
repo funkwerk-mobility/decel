@@ -879,6 +879,24 @@
       "streaming": true,
       "actual_cost": 0.0619125,
       "generation_id": "gen-1770916808-LwXXM34gbKvlOgCQGQkP"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1770916821520.json",
+      "response_file": "/tmp/forge_debug/response_1770916821520.json",
+      "timestamp": 1770916821.520867,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.000166,
+      "generation_id": "gen-1770916821-Op5GU0KMHPKPvagoft2C"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1770916838060.json",
+      "response_file": "/tmp/forge_debug/response_stream_1770916838060.json",
+      "timestamp": 1770916838.062434,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": null,
+      "generation_id": "gen-1770916838-IOFK3ezNKd5KDgLb6x7X"
     }
   ],
   "messages": [
@@ -2557,6 +2575,42 @@
         {
           "display_output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: try-catch sanity check:\ndecel.program.Program: eval returns correct result:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: division by zero throws:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: map literals and access:\n\nTime taken: 829 \u03bcs and 1 hnsec\n33 test(s) run, 0 failed.\n\nOK!\n\n",
           "output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: try-catch sanity check:\ndecel.program.Program: eval returns correct result:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: division by zero throws:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: map literals and access:\n\nTime taken: 829 \u03bcs and 1 hnsec\n33 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: e84409bb",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "yeah see that passes. try putting a match in there too, idk"
+    },
+    {
+      "role": "assistant",
+      "content": "[id 127] Good idea. Let me put the try/catch back but this time with a match in the mix, to narrow down what's actually going on:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n@(\"Eval: try-catch sanity check\")\nunittest\n{\n    // Minimal reproduction: can we catch EvalException through parseExpr?\n    bool caught = false;\n    try\n    {\n        evaluate(\"1/0\", emptyContext());\n    }\n    catch (EvalException)\n    {\n        caught = true;\n    }\n    assert(caught, \"EvalException was not caught!\");\n}\n</search>\n<replace>\n@(\"Eval: try-catch sanity check\")\nunittest\n{\n    import std.sumtype : match;\n\n    // 1. Basic: can we catch EvalException?\n    bool caught1 = false;\n    try\n    {\n        evaluate(\"1/0\", emptyContext());\n    }\n    catch (EvalException)\n    {\n        caught1 = true;\n    }\n    assert(caught1, \"Basic catch failed!\");\n\n    // 2. Catch through a match call\n    bool caught2 = false;\n    try\n    {\n        auto v = evaluate(\"1 + 2\", emptyContext());\n        // Do a match, then evaluate something that throws\n        v.inner.match!((ref long i) => i, (ref _) => 0L,);\n        evaluate(\"1/0\", emptyContext());\n    }\n    catch (EvalException)\n    {\n        caught2 = true;\n    }\n    assert(caught2, \"Catch after match failed!\");\n\n    // 3. The actual pattern: evaluate false, then try to evaluate the erroring expr\n    bool caught3 = false;\n    try\n    {\n        auto lhs = evaluate(\"false\", emptyContext());\n        auto isFalse = lhs.inner.match!((ref bool b) => !b, (ref _) => false,);\n        if (isFalse)\n        {\n            // This is what short-circuit would do with try/catch\n            evaluate(\"1/0\", emptyContext());\n        }\n    }\n    catch (EvalException)\n    {\n        caught3 = true;\n    }\n    assert(caught3, \"Catch in short-circuit pattern failed!\");\n}\n</replace>\n</edit>\n\n<run_tests/>",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: division by zero throws:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: map literals and access:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.program.Program: eval returns correct result:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: try-catch sanity check:\n\nTime taken: 772 \u03bcs and 2 hnsecs\n33 test(s) run, 0 failed.\n\nOK!\n\n",
+          "output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: division by zero throws:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: map literals and access:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.program.Program: eval returns correct result:\ndecel.program.Program: eval with context:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: try-catch sanity check:\n\nTime taken: 772 \u03bcs and 2 hnsecs\n33 test(s) run, 0 failed.\n\nOK!\n\n",
           "passed": false,
           "side_effects": [
             "has_display_output"

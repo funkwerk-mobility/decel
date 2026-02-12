@@ -1311,15 +1311,50 @@ unittest
 @("Eval: try-catch sanity check")
 unittest
 {
-    // Minimal reproduction: can we catch EvalException through parseExpr?
-    bool caught = false;
+    import std.sumtype : match;
+
+    // 1. Basic: can we catch EvalException?
+    bool caught1 = false;
     try
     {
         evaluate("1/0", emptyContext());
     }
     catch (EvalException)
     {
-        caught = true;
+        caught1 = true;
     }
-    assert(caught, "EvalException was not caught!");
+    assert(caught1, "Basic catch failed!");
+
+    // 2. Catch through a match call
+    bool caught2 = false;
+    try
+    {
+        auto v = evaluate("1 + 2", emptyContext());
+        // Do a match, then evaluate something that throws
+        v.inner.match!((ref long i) => i, (ref _) => 0L,);
+        evaluate("1/0", emptyContext());
+    }
+    catch (EvalException)
+    {
+        caught2 = true;
+    }
+    assert(caught2, "Catch after match failed!");
+
+    // 3. The actual pattern: evaluate false, then try to evaluate the erroring expr
+    bool caught3 = false;
+    try
+    {
+        auto lhs = evaluate("false", emptyContext());
+        auto isFalse = lhs.inner.match!((ref bool b) => !b, (ref _) => false,);
+        if (isFalse)
+        {
+            // This is what short-circuit would do with try/catch
+            evaluate("1/0", emptyContext());
+        }
+    }
+    catch (EvalException)
+    {
+        caught3 = true;
+    }
+    assert(caught3, "Catch in short-circuit pattern failed!");
 }
