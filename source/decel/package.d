@@ -11,4 +11,5 @@ module decel;
 public import decel.value;
 public import decel.context;
 public import decel.env;
+public import decel.lexer;
 public import decel.program;
