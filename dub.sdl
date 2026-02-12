@@ -1,0 +1,30 @@
+name "decel"
+description "A Google Common Expression Language (CEL) implementation for D"
+authors "decel contributors"
+license "BSL-1.0"
+
+targetType "library"
+targetPath "build/lib"
+
+sourcePaths ["source"]
+importPaths ["source"]
+
+buildTypes {
+	unittest {
+		dflags ["-unittest"]
+	}
+}
+
+configuration "library" {
+	targetType "library"
+}
+
+configuration "unittest" {
+	targetType "executable"
+	targetPath "build/test"
+	mainSourceFile "source/test_runner.d"
+
+	dependency "unit-threaded" {
+		version "~>2.1"
+	}
+}
