@@ -22,6 +22,7 @@ class EvalException : Exception
     /// Byte offset in the source where the error occurred.
     immutable size_t position;
 
+    /// Construct an EvalException with a message and source position.
     this(string msg, size_t pos, string file = __FILE__, size_t line = __LINE__)
     {
         import std.format : format;

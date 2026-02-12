@@ -44,10 +44,7 @@ format: ## Format source code with dfmt (shows diff of changes)
 # ── Linting ──────────────────────────────────────────────────────────
 
 lint: ## Run dscanner static analysis
-	@$(DSCANNER) --styleCheck $(SOURCE_DIR)/ 2>&1 | \
-		grep -v "could have been declared const or immutable" | \
-		grep -v "Public declaration is undocumented" | \
-		{ grep -c '\[warn\]' && exit 1 || exit 0; }
+	@$(DSCANNER) --styleCheck --config dscanner.ini $(SOURCE_DIR)/
 
 # ── Cleanup ──────────────────────────────────────────────────────────
 
