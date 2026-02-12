@@ -33,8 +33,17 @@ format: ## Format source code with dfmt
 	@find $(SOURCE_DIR) -name '*.d' | xargs $(DFMT) -i
 
 format-check: ## Check formatting without modifying files
-	@find $(SOURCE_DIR) -name '*.d' -exec sh -c \
-		'for f; do $(DFMT) "$$f" | diff -q "$$f" - > /dev/null || { echo "$$f needs formatting"; exit 1; }; done' _ {} +
+	@fail=0; \
+	for f in $$(find $(SOURCE_DIR) -name '*.d'); do \
+		if ! $(DFMT) < "$$f" | diff -q "$$f" - > /dev/null 2>&1; then \
+			echo "Needs formatting: $$f"; \
+			fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" = "1" ]; then \
+		echo "Run 'make format' to fix."; \
+		exit 1; \
+	fi
 
 # ── Linting ──────────────────────────────────────────────────────────
 

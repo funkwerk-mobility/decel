@@ -7,3 +7,8 @@
  + See_Also: https://cel.dev/
  +/
 module decel;
+
+public import decel.value;
+public import decel.context;
+public import decel.env;
+public import decel.program;
