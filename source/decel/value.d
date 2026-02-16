@@ -180,6 +180,20 @@ struct Value
     }
 }
 
+/// Extract a value of type T from a Value's inner SumType.
+/// Asserts that the Value actually holds type T — only call this
+/// when the type has already been verified via `Value.type()`.
+private T unsafeGet(T)(Value v)
+{
+    return v.inner.match!((ref T val) => val, (ref _) {
+        assert(0, "unsafeGet!" ~ T.stringof ~ ": type tag lied");
+        static if (is(T == class) || is(T == interface))
+            return null;
+        else
+            return T.init;
+    });
+}
+
 /// Deep equality comparison of two Values.
 private bool valueEquals(const Value a, const Value b)
 {
@@ -196,93 +210,27 @@ private bool valueEquals(const Value a, const Value b)
         return true;
 
     if (ta == Value.Type.bool_ && tb == Value.Type.bool_)
-    {
-        auto va = ma.inner.match!((ref bool v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return false;
-        });
-        auto vb = mb.inner.match!((ref bool v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return false;
-        });
-        return va == vb;
-    }
+        return unsafeGet!bool(ma) == unsafeGet!bool(mb);
 
     if (ta == Value.Type.int_ && tb == Value.Type.int_)
-    {
-        auto va = ma.inner.match!((ref long v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0L;
-        });
-        auto vb = mb.inner.match!((ref long v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0L;
-        });
-        return va == vb;
-    }
+        return unsafeGet!long(ma) == unsafeGet!long(mb);
 
     if (ta == Value.Type.uint_ && tb == Value.Type.uint_)
-    {
-        auto va = ma.inner.match!((ref ulong v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0UL;
-        });
-        auto vb = mb.inner.match!((ref ulong v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0UL;
-        });
-        return va == vb;
-    }
+        return unsafeGet!ulong(ma) == unsafeGet!ulong(mb);
 
     if (ta == Value.Type.double_ && tb == Value.Type.double_)
-    {
-        auto va = ma.inner.match!((ref double v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0.0;
-        });
-        auto vb = mb.inner.match!((ref double v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0.0;
-        });
-        return va == vb;
-    }
+        return unsafeGet!double(ma) == unsafeGet!double(mb);
 
     if (ta == Value.Type.string_ && tb == Value.Type.string_)
-    {
-        auto va = ma.inner.match!((ref string v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        auto vb = mb.inner.match!((ref string v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        return va == vb;
-    }
+        return unsafeGet!string(ma) == unsafeGet!string(mb);
 
     if (ta == Value.Type.bytes_ && tb == Value.Type.bytes_)
-    {
-        auto va = ma.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        auto vb = mb.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        return va == vb;
-    }
+        return unsafeGet!(immutable(ubyte)[])(ma) == unsafeGet!(immutable(ubyte)[])(mb);
 
     if (ta == Value.Type.list && tb == Value.Type.list)
     {
-        auto la = ma.inner.match!((ref List v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        auto lb = mb.inner.match!((ref List v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
+        auto la = unsafeGet!List(ma);
+        auto lb = unsafeGet!List(mb);
         if (la.length != lb.length)
             return false;
         foreach (i; 0 .. la.length)
@@ -293,14 +241,8 @@ private bool valueEquals(const Value a, const Value b)
 
     if (ta == Value.Type.map && tb == Value.Type.map)
     {
-        auto mapA = ma.inner.match!((ref Value[string] v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
-        auto mapB = mb.inner.match!((ref Value[string] v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return null;
-        });
+        auto mapA = unsafeGet!(Value[string])(ma);
+        auto mapB = unsafeGet!(Value[string])(mb);
         if (mapA.length != mapB.length)
             return false;
         foreach (k, v; mapA)
@@ -313,30 +255,10 @@ private bool valueEquals(const Value a, const Value b)
     }
 
     if (ta == Value.Type.duration && tb == Value.Type.duration)
-    {
-        auto da = ma.inner.match!((ref Duration v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return Duration.zero;
-        });
-        auto db = mb.inner.match!((ref Duration v) => v, (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return Duration.zero;
-        });
-        return da == db;
-    }
+        return unsafeGet!Duration(ma) == unsafeGet!Duration(mb);
 
     if (ta == Value.Type.timestamp && tb == Value.Type.timestamp)
-    {
-        auto sa = ma.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0L;
-        });
-        auto sb = mb.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) {
-            assert(0, "type mismatch in valueEquals");
-            return 0L;
-        });
-        return sa == sb;
-    }
+        return unsafeGet!SysTime(ma).toUnixTime() == unsafeGet!SysTime(mb).toUnixTime();
 
     return false;
 }
