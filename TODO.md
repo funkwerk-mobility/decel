@@ -35,12 +35,9 @@
 - [x] Macro system (function-call and method-call macros)
 - [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`
 - [x] `.matches()` regex method — `s.matches(re)` for full-string regex matching
+- [x] Null semantics: `null == null` → true, `null != X` → true, null arithmetic → error
 
 ## 🎯 1.0.0 Blockers
-
-- [ ] **Null semantics** — verify and test: `null == null` → `true`,
-      `null != X` → `true` for non-null X, arithmetic with null → error.
-      Likely already works, just needs explicit test coverage.
 
 - [ ] **Cross-type numeric comparison** — `1u == 1` should be `true`,
       `1u < 2` should work, `1.0 == 1` should be `true`. Currently

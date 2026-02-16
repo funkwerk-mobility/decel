@@ -844,9 +844,7 @@
   ],
   "parent_session": null,
   "child_sessions": [
-    "feat-matches-regex",
-    "feat-cross-type-comparison",
-    "feat-null-semantics"
+    "feat-cross-type-comparison"
   ],
   "state": "waiting_children",
   "yield_message": "Waiting on child sessions: feat-cross-type-comparison, feat-null-semantics"
