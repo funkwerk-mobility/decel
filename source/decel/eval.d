@@ -119,9 +119,10 @@ Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
                 auto entryMM = tryGet!Entry(lhs);
                 if (!entryMM.isNull)
                 {
-                    if (auto emm = entryMM.get.methodMacro(ident.text))
+                    auto emResult = entryMM.get.evalMacro(ident.text, lhs, r, env, ctx);
+                    if (!emResult.isNull)
                     {
-                        lhs = emm(lhs, r, env, ctx);
+                        lhs = emResult.get;
                         continue;
                     }
                 }
@@ -2623,32 +2624,31 @@ unittest
             return new ArrayList(series);
         }
 
-        override MethodMacro methodMacro(string name)
+        override Nullable!Value evalMacro(string name, Value self,
+                ref TokenRange r, const Env env, Context ctx)
         {
             if (name == "where")
             {
-                return (Value target, ref TokenRange r, const Env env, Context ctx) {
-                    // Parse a single threshold argument: .where(threshold)
-                    auto args = parseArgList(r, env, ctx);
-                    r.expect(Token.Kind.rparen);
-                    if (args.length != 1)
-                        return Value.err(".where() takes exactly 1 argument");
-                    auto threshold = tryGet!long(args[0]);
-                    if (threshold.isNull)
-                        return Value.err(".where() requires an int argument");
-                    // Filter series > threshold
-                    auto me = cast(MetricEntry) target.get!Entry;
-                    Value[] filtered;
-                    foreach (v; me.series)
-                    {
-                        auto iv = tryGet!long(v);
-                        if (!iv.isNull && iv.get > threshold.get)
-                            filtered ~= v;
-                    }
-                    return Value(cast(Entry) new MetricEntry(me.metricName, filtered));
-                };
+                // Parse a single threshold argument: .where(threshold)
+                auto args = parseArgList(r, env, ctx);
+                r.expect(Token.Kind.rparen);
+                if (args.length != 1)
+                    return nullable(Value.err(".where() takes exactly 1 argument"));
+                auto threshold = tryGet!long(args[0]);
+                if (threshold.isNull)
+                    return nullable(Value.err(".where() requires an int argument"));
+                // Filter series > threshold
+                auto me = cast(MetricEntry) self.get!Entry;
+                Value[] filtered;
+                foreach (v; me.series)
+                {
+                    auto iv = tryGet!long(v);
+                    if (!iv.isNull && iv.get > threshold.get)
+                        filtered ~= v;
+                }
+                return nullable(Value(cast(Entry) new MetricEntry(me.metricName, filtered)));
             }
-            return null;
+            return Nullable!Value.init;
         }
     }
 
@@ -2686,17 +2686,16 @@ unittest
             return Value.err("no such field: " ~ name);
         }
 
-        override MethodMacro methodMacro(string name)
+        override Nullable!Value evalMacro(string name, Value, ref TokenRange r,
+                const Env env, Context ctx)
         {
             if (name == "custom")
             {
-                return (Value, ref TokenRange r, const Env env, Context ctx) {
-                    cast(void) parseArgList(r, env, ctx);
-                    r.expect(Token.Kind.rparen);
-                    return value("custom called");
-                };
+                cast(void) parseArgList(r, env, ctx);
+                r.expect(Token.Kind.rparen);
+                return nullable(value("custom called"));
             }
-            return null;
+            return Nullable!Value.init;
         }
     }
 

@@ -20,6 +20,7 @@ module decel;
 
 // Value types
 public import decel.value : Value, Entry, List, ArrayList, value;
+public import std.typecons : Nullable, nullable;
 
 // Context (variable bindings)
 public import decel.context : Context, contextFrom, emptyContext, bindContext;

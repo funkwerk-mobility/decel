@@ -340,11 +340,11 @@ Both `asList()` and `asValue()` can be overridden on the same Entry,
 giving you a value that has named fields, acts as a list, and participates
 in arithmetic.
 
-### Entry-Level Method Macros — `methodMacro()`
+### Entry-Level Method Macros — `evalMacro()`
 
-Override `methodMacro()` to give an Entry its own method-call handlers
-with full access to the token stream. This lets each Entry subclass define
-custom syntax without registering global macros:
+Override `evalMacro()` to give an Entry its own method-call handlers
+with full access to the token stream, environment, and context. This lets
+each Entry subclass define custom syntax without registering global macros:
 
 ```d
 class MetricEntry : Entry
@@ -355,18 +355,16 @@ class MetricEntry : Entry
     override Value resolve(string field) { /* ... */ }
     override List asList() { /* ... */ }
 
-    override MethodMacro methodMacro(string name)
+    override Nullable!Value evalMacro(string name, Value self,
+            ref TokenRange r, const Env env, Context ctx)
     {
         if (name == "where")
         {
-            // Return a handler that parses .where(...) arguments
-            return (Value target, ref TokenRange r, const Env env, Context ctx) {
-                auto args = parseArgList(r, env, ctx);
-                r.expect(Token.Kind.rparen);
-                // ... filter logic, return new MetricEntry ...
-            };
+            auto args = parseArgList(r, env, ctx);
+            r.expect(Token.Kind.rparen);
+            // ... filter logic, return nullable(Value(...)) ...
         }
-        return null;  // fall through to normal method dispatch
+        return Nullable!Value.init;  // fall through to normal dispatch
     }
 }
 ```
@@ -377,7 +375,7 @@ metric.where(threshold > 50).all(x, x.healthy)
 ```
 
 The evaluator checks Entry-level macros after global method macros but
-before built-in methods. Return `null` to fall through to normal dispatch.
+before built-in methods. Return `Nullable!Value.init` to fall through.
 
 ### Combining Entry and List
 

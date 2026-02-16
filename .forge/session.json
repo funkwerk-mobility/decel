@@ -1,18 +1,18 @@
 {
   "active_files": [
-    "source/decel/package.d",
-    "COMPATIBILITY.md",
     "source/decel/exception.d",
-    "source/decel/context.d",
-    "source/decel/eval.d",
-    "source/decel/env.d",
-    "Makefile",
-    "dub.sdl",
-    "TODO.md",
     "source/decel/lexer.d",
+    "COMPATIBILITY.md",
+    "source/decel/package.d",
+    "source/decel/eval.d",
+    "source/decel/value.d",
+    "Makefile",
+    "source/decel/env.d",
+    "dub.sdl",
     "README.md",
-    "dscanner.ini",
-    "source/decel/value.d"
+    "TODO.md",
+    "source/decel/context.d",
+    "dscanner.ini"
   ],
   "request_log_entries": [
     {
@@ -257,6 +257,42 @@
       "streaming": true,
       "actual_cost": 0.31637475,
       "generation_id": "gen-1771262443-7syScrB1btG9t2cld9rd"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1771262485519.json",
+      "response_file": "/tmp/forge_debug/response_1771262485519.json",
+      "timestamp": 1771262485.522272,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.004322,
+      "generation_id": "gen-1771262485-aFosm18STXTX5DWOMjPG"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771262526923.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771262526923.json",
+      "timestamp": 1771262526.9248588,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.4974175,
+      "generation_id": "gen-1771262527-Ud01sqC7v4YuHhU23jYa"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771262575815.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771262575815.json",
+      "timestamp": 1771262575.8173118,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.084241,
+      "generation_id": "gen-1771262576-qsxi4ao0mT9qrooTB3aG"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771262595707.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771262595707.json",
+      "timestamp": 1771262595.708454,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.06730425,
+      "generation_id": "gen-1771262596-2cHdWLil3L2gVzbgw6TK"
     }
   ],
   "messages": [
@@ -881,6 +917,82 @@
         },
         {
           "commit": "b7d4ed700b50",
+          "message": "Committed: 5 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Generated summaries for 16 files",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "Hm, instead of returning a MethodMacro can we just pass the full TokenRange, Env, Context stuff to the macro Entry overload? give it full control immediately."
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood call \u2014 much cleaner. Instead of returning a `MethodMacro` delegate, just give the Entry the same signature directly. Let me refactor:\n\n<edit file=\"source/decel/value.d\">\n<search>\n    /// If this entry handles a method-call macro by name, return the handler.\n    /// Called when the evaluator sees `entry.name(...)`. The handler receives\n    /// the token stream and is responsible for parsing arguments and consuming\n    /// the closing `)`. Return null to fall through to normal method dispatch.\n    import decel.env : MethodMacro;\n\n    MethodMacro methodMacro(string)\n    {\n        return null;\n    }\n</search>\n<replace>\n    /// Handle a method-call macro on this entry. Called when the evaluator\n    /// sees `entry.name(...)`. The opening `(` has already been consumed.\n    /// Parse arguments from the token range and consume the closing `)`.\n    /// Return `Nullable!Value.init` to fall through to normal method dispatch.\n    import decel.env : TokenRange, Env;\n    import decel.context : Context;\n\n    Nullable!Value evalMacro(string name, Value self, ref TokenRange r, const Env env, Context ctx)\n    {\n        return Nullable!Value.init;\n    }\n</replace>\n</edit>\n\nNow update the evaluator to call `evalMacro` directly instead of `methodMacro`:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n                // Check Entry-level method macros\n                auto entryMM = tryGet!Entry(lhs);\n                if (!entryMM.isNull)\n                {\n                    if (auto emm = entryMM.get.methodMacro(ident.text))\n                    {\n                        lhs = emm(lhs, r, env, ctx);\n                        continue;\n                    }\n                }\n</search>\n<replace>\n                // Check Entry-level method macros\n                auto entryMM = tryGet!Entry(lhs);\n                if (!entryMM.isNull)\n                {\n                    auto emResult = entryMM.get.evalMacro(ident.text, lhs, r, env, ctx);\n                    if (!emResult.isNull)\n                    {\n                        lhs = emResult.get;\n                        continue;\n                    }\n                }\n</replace>\n</edit>\n\nNow update the tests to use the new `evalMacro` signature:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n        override MethodMacro methodMacro(string name)\n        {\n            if (name == \"where\")\n            {\n                return (Value target, ref TokenRange r, const Env env, Context ctx) {\n                    // Parse a single threshold argument: .where(threshold)\n                    auto args = parseArgList(r, env, ctx);\n                    r.expect(Token.Kind.rparen);\n                    if (args.length != 1)\n                        return Value.err(\".where() takes exactly 1 argument\");\n                    auto threshold = tryGet!long(args[0]);\n                    if (threshold.isNull)\n                        return Value.err(\".where() requires an int argument\");\n                    // Filter series > threshold\n                    auto me = cast(MetricEntry) target.get!Entry;\n                    Value[] filtered;\n                    foreach (v; me.series)\n                    {\n                        auto iv = tryGet!long(v);\n                        if (!iv.isNull && iv.get > threshold.get)\n                            filtered ~= v;\n                    }\n                    return Value(cast(Entry) new MetricEntry(me.metricName, filtered));\n                };\n            }\n            return null;\n        }\n</search>\n<replace>\n        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n                const Env env, Context ctx)\n        {\n            if (name == \"where\")\n            {\n                // Parse a single threshold argument: .where(threshold)\n                auto args = parseArgList(r, env, ctx);\n                r.expect(Token.Kind.rparen);\n                if (args.length != 1)\n                    return nullable(Value.err(\".where() takes exactly 1 argument\"));\n                auto threshold = tryGet!long(args[0]);\n                if (threshold.isNull)\n                    return nullable(Value.err(\".where() requires an int argument\"));\n                // Filter series > threshold\n                auto me = cast(MetricEntry) self.get!Entry;\n                Value[] filtered;\n                foreach (v; me.series)\n                {\n                    auto iv = tryGet!long(v);\n                    if (!iv.isNull && iv.get > threshold.get)\n                        filtered ~= v;\n                }\n                return nullable(Value(cast(Entry) new MetricEntry(me.metricName, filtered)));\n            }\n            return Nullable!Value.init;\n        }\n</replace>\n</edit>\n\n<edit file=\"source/decel/eval.d\">\n<search>\n        override MethodMacro methodMacro(string name)\n        {\n            if (name == \"custom\")\n            {\n                return (Value, ref TokenRange r, const Env env, Context ctx) {\n                    cast(void) parseArgList(r, env, ctx);\n                    r.expect(Token.Kind.rparen);\n                    return value(\"custom called\");\n                };\n            }\n            return null;\n        }\n</search>\n<replace>\n        override Nullable!Value evalMacro(string name, Value, ref TokenRange r,\n                const Env env, Context ctx)\n        {\n            if (name == \"custom\")\n            {\n                cast(void) parseArgList(r, env, ctx);\n                r.expect(Token.Kind.rparen);\n                return nullable(value(\"custom called\"));\n            }\n            return Nullable!Value.init;\n        }\n</replace>\n</edit>\n\nNow update the README to reflect the new API:\n\n<edit file=\"README.md\">\n<search>\n### Entry-Level Method Macros \u2014 `methodMacro()`\n\nOverride `methodMacro()` to give an Entry its own method-call handlers\nwith full access to the token stream. This lets each Entry subclass define\ncustom syntax without registering global macros:\n\n```d\nclass MetricEntry : Entry\n{\n    string name;\n    double[] values;\n\n    override Value resolve(string field) { /* ... */ }\n    override List asList() { /* ... */ }\n\n    override MethodMacro methodMacro(string name)\n    {\n        if (name == \"where\")\n        {\n            // Return a handler that parses .where(...) arguments\n            return (Value target, ref TokenRange r, const Env env, Context ctx) {\n                auto args = parseArgList(r, env, ctx);\n                r.expect(Token.Kind.rparen);\n                // ... filter logic, return new MetricEntry ...\n            };\n        }\n        return null;  // fall through to normal method dispatch\n    }\n}\n```\n\nThen in CEL:\n```cel\nmetric.where(threshold > 50).all(x, x.healthy)\n```\n\nThe evaluator checks Entry-level macros after global method macros but\nbefore built-in methods. Return `null` to fall through to normal dispatch.\n</search>\n<replace>\n### Entry-Level Method Macros \u2014 `evalMacro()`\n\nOverride `evalMacro()` to give an Entry its own method-call handlers\nwith full access to the token stream, environment, and context. This lets\neach Entry subclass define custom syntax without registering global macros:\n\n```d\nclass MetricEntry : Entry\n{\n    string name;\n    double[] values;\n\n    override Value resolve(string field) { /* ... */ }\n    override List asList() { /* ... */ }\n\n    override Nullable!Value evalMacro(string name, Value self,\n            ref TokenRange r, const Env env, Context ctx)\n    {\n        if (name == \"where\")\n        {\n            auto args = parseArgList(r, env, ctx);\n            r.expect(Token.Kind.rparen);\n            // ... filter logic, return nullable(Value(...)) ...\n        }\n        return Nullable!Value.init;  // fall through to normal dispatch\n    }\n}\n```\n\nThen in CEL:\n```cel\nmetric.where(threshold > 50).all(x, x.healthy)\n```\n\nThe evaluator checks Entry-level macros after global method macros but\nbefore built-in methods. Return `Nullable!Value.init` to fall through.\n</replace>\n</edit>\n\n<edit file=\"TODO.md\">\n<search>\n- [x] `Entry.methodMacro()` \u2014 per-entry method macros with full token-stream access\n</search>\n<replace>\n- [x] `Entry.evalMacro()` \u2014 per-entry method macros with full token-stream access\n</replace>\n</edit>\n\nNow update the package.d to export `Nullable` since users will need it for `evalMacro` return values:\n\n<edit file=\"source/decel/package.d\">\n<search>\n// Value types\npublic import decel.value : Value, Entry, List, ArrayList, value;\n</search>\n<replace>\n// Value types\npublic import decel.value : Value, Entry, List, ArrayList, value;\npublic import std.typecons : Nullable, nullable;\n</replace>\n</edit>\n\n<run_tests/>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `run_tests` failed:\n\ndfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-16 18:22:50.869965438 +0100\n+++ b/source/decel/eval.d\t2026-02-16 18:22:50.906409362 +0100\n@@ -2624,8 +2624,8 @@\n             return new ArrayList(series);\n         }\n \n-        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n-                const Env env, Context ctx)\n+        override Nullable!Value evalMacro(string name, Value self,\n+                ref TokenRange r, const Env env, Context ctx)\n         {\n             if (name == \"where\")\n             {\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: Entry.asValue() \u2014 entry that unwraps to a scalar:\ndecel.eval.Eval: Entry.methodMacro() \u2014 entry-level method macros:\ndecel.eval.Eval: Entry.methodMacro() \u2014 non-matching falls through:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: Entry with both asList() and asValue():\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: Entry.asList() \u2014 entry that acts as a list:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: now() function:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: now() rejects arguments:\ndecel.eval.Eval: now() with arithmetic:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: string literals:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: unary minus:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: duration arithmetic:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: cross-type numeric comparison:\n\nTime taken: 2 ms, 378 \u03bcs, and 6 hnsecs\n64 test(s) run, 0 failed.\n\nOK!\n\nsource/decel/value.d(44:37)[warn]: Parameter name is never used.\nsource/decel/value.d(44:49)[warn]: Parameter self is never used.\nsource/decel/value.d(44:83)[warn]: Parameter env is never used.\nsource/decel/value.d(44:96)[warn]: Parameter ctx is never used.\n\n--- stderr ---\nmake: *** [Makefile:47: lint] Fehler 1\n",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nAll 64 tests pass, just dfmt formatting and lint warnings. Let me fix both:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n                const Env env, Context ctx)\n</search>\n<replace>\n        override Nullable!Value evalMacro(string name, Value self,\n                ref TokenRange r, const Env env, Context ctx)\n</replace>\n</edit>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `edit` failed:\n\nSearch text not found in source/decel/eval.d.\n\n**VERY CLOSE MATCH - check the diff carefully for:\n  \u2022 Trailing whitespace or newlines\n  \u2022 Small typos\n  \u2022 Indentation differences**\n\nFound 98.4% similar text at line 2689 (edit distance: 2):\n\n```\n        override Nullable!Value evalMacro(string name, Value, ref TokenRange r,\n                const Env env, Context ctx)\n```\n\nDiff (--- your search vs +++ actual file):\n```diff\n--- expected\n+++ actual\n@@ -1,2 +1,2 @@\n-        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n+        override Nullable!Value evalMacro(string name, Value, ref TokenRange r,\n                 const Env env, Context ctx)\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "Right \u2014 there are two different `evalMacro` overrides. The one at line 2625 has `Value self` (MetricEntry test) and the one at line 2689 has `Value` unnamed (CustomEntry test). The dfmt fix is only needed for the MetricEntry one. And the lint warnings are about the base class in value.d. Let me fix all of these:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n        override Nullable!Value evalMacro(string name, Value self,\n                ref TokenRange r, const Env env, Context ctx)\n        {\n            if (name == \"where\")\n            {\n</search>\n<replace>\n        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n                const Env env, Context ctx)\n        {\n            if (name == \"where\")\n            {\n</replace>\n</edit>\n\nNow fix the lint warnings \u2014 the base class default implementation has unused parameters:\n\n<edit file=\"source/decel/value.d\">\n<search>\n    Nullable!Value evalMacro(string name, Value self, ref TokenRange r, const Env env, Context ctx)\n    {\n        return Nullable!Value.init;\n    }\n</search>\n<replace>\n    Nullable!Value evalMacro(string, Value, ref TokenRange, const Env, Context)\n    {\n        return Nullable!Value.init;\n    }\n</replace>\n</edit>\n\n<run_tests/>\n\n<commit message=\"Refactor Entry.methodMacro() \u2192 Entry.evalMacro()\n\nEntry-level method macros now receive the full TokenRange, Env, and\nContext directly instead of returning a MethodMacro delegate. This\ngives each Entry subclass immediate control over argument parsing.\n\n- Entry.evalMacro(name, self, r, env, ctx) \u2192 Nullable!Value\n  Returns Nullable!Value.init to fall through to normal dispatch.\n- Updated evaluator dispatch to call evalMacro directly\n- Exported Nullable/nullable from decel package for user convenience\n- Updated README and TODO\n- All 64 tests pass, lint clean\" />\n\nDone! The API is now:\n\n```d\noverride Nullable!Value evalMacro(string name, Value self,\n        ref TokenRange r, const Env env, Context ctx)\n{\n    if (name == \"where\")\n    {\n        auto args = parseArgList(r, env, ctx);\n        r.expect(Token.Kind.rparen);\n        // ... your logic ...\n        return nullable(Value(...));\n    }\n    return Nullable!Value.init;  // fall through\n}\n```\n\nMuch cleaner \u2014 full control immediately, no intermediate delegate.",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/value.d",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-16 18:23:30.077632127 +0100\n+++ b/source/decel/eval.d\t2026-02-16 18:23:30.114080834 +0100\n@@ -2624,8 +2624,8 @@\n             return new ArrayList(series);\n         }\n \n-        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n-                const Env env, Context ctx)\n+        override Nullable!Value evalMacro(string name, Value self,\n+                ref TokenRange r, const Env env, Context ctx)\n         {\n             if (name == \"where\")\n             {\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: Entry with both asList() and asValue():\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: Entry.methodMacro() \u2014 non-matching falls through:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: Entry.asValue() \u2014 entry that unwraps to a scalar:\ndecel.eval.Eval: Entry.methodMacro() \u2014 entry-level method macros:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: Entry.asList() \u2014 entry that acts as a list:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: unknown variable from context:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: now() rejects arguments:\ndecel.eval.Eval: now() with arithmetic:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: now() function:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: string methods:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.lexer.Lexer: numeric literals:\ndecel.eval.Eval: syntax error throws:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.eval.Eval: duration arithmetic:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: timestamp arithmetic:\n\nTime taken: 2 ms, 376 \u03bcs, and 3 hnsecs\n64 test(s) run, 0 failed.\n\nOK!\n\n",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "output": "dfmt reformatted: source/decel/eval.d\n--- a/source/decel/eval.d\t2026-02-16 18:23:30.077632127 +0100\n+++ b/source/decel/eval.d\t2026-02-16 18:23:30.114080834 +0100\n@@ -2624,8 +2624,8 @@\n             return new ArrayList(series);\n         }\n \n-        override Nullable!Value evalMacro(string name, Value self, ref TokenRange r,\n-                const Env env, Context ctx)\n+        override Nullable!Value evalMacro(string name, Value self,\n+                ref TokenRange r, const Env env, Context ctx)\n         {\n             if (name == \"where\")\n             {\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: Entry with both asList() and asValue():\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: Entry.methodMacro() \u2014 non-matching falls through:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: Entry.asValue() \u2014 entry that unwraps to a scalar:\ndecel.eval.Eval: Entry.methodMacro() \u2014 entry-level method macros:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: Entry.asList() \u2014 entry that acts as a list:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: unknown variable from context:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: now() rejects arguments:\ndecel.eval.Eval: now() with arithmetic:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: now() function:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: string methods:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.lexer.Lexer: numeric literals:\ndecel.eval.Eval: syntax error throws:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.eval.Eval: duration arithmetic:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: type casts:\ndecel.eval.Eval: timestamp arithmetic:\n\nTime taken: 2 ms, 376 \u03bcs, and 3 hnsecs\n64 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "files_modified",
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "5e973115b4d3",
           "message": "Committed: 5 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"

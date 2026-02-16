@@ -42,7 +42,7 @@
 - [x] `now()` function — returns the current time as a timestamp value
 - [x] `Entry.asList()` — entries that double as lists (comprehensions, size, indexing, `in`)
 - [x] `Entry.asValue()` — entries that unwrap to scalars in arithmetic/comparison
-- [x] `Entry.methodMacro()` — per-entry method macros with full token-stream access
+- [x] `Entry.evalMacro()` — per-entry method macros with full token-stream access
 
 ## 🎯 1.0.0 Blockers
 

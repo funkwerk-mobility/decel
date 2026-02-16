@@ -34,15 +34,16 @@ abstract class Entry
         return Nullable!Value.init;
     }
 
-    /// If this entry handles a method-call macro by name, return the handler.
-    /// Called when the evaluator sees `entry.name(...)`. The handler receives
-    /// the token stream and is responsible for parsing arguments and consuming
-    /// the closing `)`. Return null to fall through to normal method dispatch.
-    import decel.env : MethodMacro;
+    /// Handle a method-call macro on this entry. Called when the evaluator
+    /// sees `entry.name(...)`. The opening `(` has already been consumed.
+    /// Parse arguments from the token range and consume the closing `)`.
+    /// Return `Nullable!Value.init` to fall through to normal method dispatch.
+    import decel.env : TokenRange, Env;
+    import decel.context : Context;
 
-    MethodMacro methodMacro(string)
+    Nullable!Value evalMacro(string, Value, ref TokenRange, const Env, Context)
     {
-        return null;
+        return Nullable!Value.init;
     }
 }
 
