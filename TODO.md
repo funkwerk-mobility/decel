@@ -43,7 +43,8 @@
 - [x] `Entry.asList()` — entries that double as lists (comprehensions, size, indexing, `in`)
 - [x] `Entry.asValue()` — entries that unwrap to scalars in arithmetic/comparison
 - [x] `Entry.evalMacro()` — per-entry method macros with full token-stream access
-- [x] `Entry.evalContinuation()` — arbitrary postfix syntax parsing (e.g. `{attr == "val"}`)
+- [x] `Entry.evalContinuation()` — arbitrary postfix syntax parsing (e.g. `{attr = "val"}`)
+- [x] Single `=` token — enables Prometheus-native `{key = "value"}` filter syntax
 
 ## 🎯 1.0.0 Blockers
 

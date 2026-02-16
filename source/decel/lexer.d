@@ -37,6 +37,7 @@ struct Token
         slash,
         percent,
         bang,
+        eq,
         eqEq,
         bangEq,
         lt,
@@ -240,6 +241,9 @@ Token[] tokenize(string source)
             break;
         case ',':
             singleKind = Token.Kind.comma;
+            break;
+        case '=':
+            singleKind = Token.Kind.eq;
             break;
         default:
             foundSingle = false;
@@ -505,6 +509,22 @@ unittest
     auto tokens = tokenize("");
     with (Token.Kind)
         tokens.map!"a.kind".should.be([eof]);
+}
+
+@("Lexer: single = token")
+unittest
+{
+    import std.algorithm : map;
+    import dshould;
+
+    auto tokens = tokenize(`a = "b"`);
+    with (Token.Kind)
+        tokens.map!"a.kind".should.be([ident, eq, stringLit, eof]);
+
+    // == is still a separate token
+    auto tokens2 = tokenize(`a == "b"`);
+    with (Token.Kind)
+        tokens2.map!"a.kind".should.be([ident, eqEq, stringLit, eof]);
 }
 
 @("Lexer: unary negation and subtraction")

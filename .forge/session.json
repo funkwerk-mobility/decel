@@ -311,6 +311,33 @@
       "streaming": true,
       "actual_cost": 0.57099,
       "generation_id": "gen-1771263090-fJtCWVtzBOMfBq76zJAJ"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1771263166849.json",
+      "response_file": "/tmp/forge_debug/response_1771263166849.json",
+      "timestamp": 1771263166.850115,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.000201,
+      "generation_id": "gen-1771263167-kIQZ5qL0xEOgeZiNlx4G"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771263189494.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771263189494.json",
+      "timestamp": 1771263189.4961486,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.145876,
+      "generation_id": "gen-1771263190-a28NgH2KXQ2WlGRp0K1h"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771263254068.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771263254068.json",
+      "timestamp": 1771263254.0699863,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.099202,
+      "generation_id": "gen-1771263254-sjEd7E9Jswq8tuxefPuN"
     }
   ],
   "messages": [
@@ -1109,6 +1136,99 @@
           "success": true,
           "summary": "\u2713 Tests passed (make test)",
           "test_command": "make test"
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 934b6f6c",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "hm, for consistency can we add a single-equality token?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood call \u2014 right now the Prometheus filter syntax uses `==` which is the CEL equality operator, but real Prometheus uses single `=`. Let me add `eq` (single `=`) as a token to the lexer, and also `bangEq` already exists for `!=` which Prometheus also uses. I'll add `=` as a new token kind.\n\n<edit file=\"source/decel/lexer.d\">\n<search>\n        // Operators\n        plus,\n        minus,\n        star,\n        slash,\n        percent,\n        bang,\n        eqEq,\n        bangEq,\n</search>\n<replace>\n        // Operators\n        plus,\n        minus,\n        star,\n        slash,\n        percent,\n        bang,\n        eq,\n        eqEq,\n        bangEq,\n</replace>\n</edit>\n\nNow in the lexer's two-character operator matching, `==` is already handled. I need to add single `=` as a fallback in the single-character section:\n\n<edit file=\"source/decel/lexer.d\">\n<search>\n        case '.':\n            singleKind = Token.Kind.dot;\n            break;\n        case ',':\n            singleKind = Token.Kind.comma;\n            break;\n        default:\n            foundSingle = false;\n            break;\n</search>\n<replace>\n        case '.':\n            singleKind = Token.Kind.dot;\n            break;\n        case ',':\n            singleKind = Token.Kind.comma;\n            break;\n        case '=':\n            singleKind = Token.Kind.eq;\n            break;\n        default:\n            foundSingle = false;\n            break;\n</replace>\n</edit>\n\nThis works because the two-character check (`==`) runs first \u2014 so `==` is consumed as `eqEq`, and a lone `=` falls through to the single-character switch and becomes `eq`.\n\nNow update the `kindName` function \u2014 it derives from `to!string` so it should work automatically. But let me also update the `evalContinuation` test to use single `=` for the true Prometheus syntax, while still supporting `==`:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n    /// Parse {key == \"val\", ...} continuation syntax.\n        override Nullable!Value evalContinuation(Value self,\n                ref TokenRange r, const Env env, Context ctx)\n        {\n            if (r.peek().kind != Token.Kind.lbrace)\n                return Nullable!Value.init;\n\n            r.advance(); // consume '{'\n\n            // Parse key == expr pairs\n            string[string] filters;\n            if (r.peek().kind != Token.Kind.rbrace)\n            {\n                auto keyTok = r.expect(Token.Kind.ident);\n                r.expect(Token.Kind.eqEq);\n                auto val = parseExpr(r, env, ctx, 0);\n                filters[keyTok.text] = val.get!string;\n\n                while (r.match(Token.Kind.comma))\n                {\n                    keyTok = r.expect(Token.Kind.ident);\n                    r.expect(Token.Kind.eqEq);\n                    val = parseExpr(r, env, ctx, 0);\n                    filters[keyTok.text] = val.get!string;\n                }\n            }\n            r.expect(Token.Kind.rbrace);\n</search>\n<replace>\n    /// Parse {key = \"val\", ...} or {key == \"val\", ...} continuation syntax.\n        override Nullable!Value evalContinuation(Value self,\n                ref TokenRange r, const Env env, Context ctx)\n        {\n            if (r.peek().kind != Token.Kind.lbrace)\n                return Nullable!Value.init;\n\n            r.advance(); // consume '{'\n\n            // Parse key = expr or key == expr pairs\n            string[string] filters;\n            if (r.peek().kind != Token.Kind.rbrace)\n            {\n                auto keyTok = r.expect(Token.Kind.ident);\n                // Accept both = and == for Prometheus compatibility\n                if (!r.match(Token.Kind.eq))\n                    r.expect(Token.Kind.eqEq);\n                auto val = parseExpr(r, env, ctx, 0);\n                filters[keyTok.text] = val.get!string;\n\n                while (r.match(Token.Kind.comma))\n                {\n                    keyTok = r.expect(Token.Kind.ident);\n                    if (!r.match(Token.Kind.eq))\n                        r.expect(Token.Kind.eqEq);\n                    val = parseExpr(r, env, ctx, 0);\n                    filters[keyTok.text] = val.get!string;\n                }\n            }\n            r.expect(Token.Kind.rbrace);\n</replace>\n</edit>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `edit` failed:\n\nSearch text not found in source/decel/eval.d.\n\n**VERY CLOSE MATCH - check the diff carefully for:\n  \u2022 Trailing whitespace or newlines\n  \u2022 Small typos\n  \u2022 Indentation differences**\n\nFound 98.3% similar text at line 2769 (edit distance: 18):\n\n```\n        /// Parse {key == \"val\", ...} continuation syntax.\n        override Nullable!Value evalContinuation(Value self, ref TokenRange r,\n                const Env env, Context ctx)\n    ...\n            }\n            r.expect(Token.Kind.rbrace);\n```\n\nDiff (--- your search vs +++ actual file):\n```diff\n--- expected\n+++ actual\n@@ -1,6 +1,6 @@\n-    /// Parse {key == \"val\", ...} continuation syntax.\n-        override Nullable!Value evalContinuation(Value self,\n-                ref TokenRange r, const Env env, Context ctx)\n+        /// Parse {key == \"val\", ...} continuation syntax.\n+        override Nullable!Value evalContinuation(Value self, ref TokenRange r,\n+                const Env env, Context ctx)\n         {\n             if (r.peek().kind != Token.Kind.lbrace)\n                 return Nullable!Value.init;\n\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me fix the indentation mismatch and retry:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n        /// Parse {key == \"val\", ...} continuation syntax.\n        override Nullable!Value evalContinuation(Value self, ref TokenRange r,\n                const Env env, Context ctx)\n        {\n            if (r.peek().kind != Token.Kind.lbrace)\n                return Nullable!Value.init;\n\n            r.advance(); // consume '{'\n\n            // Parse key == expr pairs\n            string[string] filters;\n            if (r.peek().kind != Token.Kind.rbrace)\n            {\n                auto keyTok = r.expect(Token.Kind.ident);\n                r.expect(Token.Kind.eqEq);\n                auto val = parseExpr(r, env, ctx, 0);\n                filters[keyTok.text] = val.get!string;\n\n                while (r.match(Token.Kind.comma))\n                {\n                    keyTok = r.expect(Token.Kind.ident);\n                    r.expect(Token.Kind.eqEq);\n                    val = parseExpr(r, env, ctx, 0);\n                    filters[keyTok.text] = val.get!string;\n                }\n            }\n            r.expect(Token.Kind.rbrace);\n</search>\n<replace>\n        /// Parse {key = \"val\", ...} or {key == \"val\", ...} continuation syntax.\n        override Nullable!Value evalContinuation(Value self, ref TokenRange r,\n                const Env env, Context ctx)\n        {\n            if (r.peek().kind != Token.Kind.lbrace)\n                return Nullable!Value.init;\n\n            r.advance(); // consume '{'\n\n            // Parse key = expr or key == expr pairs\n            string[string] filters;\n            if (r.peek().kind != Token.Kind.rbrace)\n            {\n                auto keyTok = r.expect(Token.Kind.ident);\n                // Accept both = and == for Prometheus compatibility\n                if (!r.match(Token.Kind.eq))\n                    r.expect(Token.Kind.eqEq);\n                auto val = parseExpr(r, env, ctx, 0);\n                filters[keyTok.text] = val.get!string;\n\n                while (r.match(Token.Kind.comma))\n                {\n                    keyTok = r.expect(Token.Kind.ident);\n                    if (!r.match(Token.Kind.eq))\n                        r.expect(Token.Kind.eqEq);\n                    val = parseExpr(r, env, ctx, 0);\n                    filters[keyTok.text] = val.get!string;\n                }\n            }\n            r.expect(Token.Kind.rbrace);\n</replace>\n</edit>\n\nNow update the test to exercise single `=` syntax, and add a lexer test:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n    // Basic attribute filter\n    evaluate(`http_requests{method == \"GET\"}.count`, ctx).should.be(value(2L));\n    evaluate(`http_requests{method == \"POST\"}.count`, ctx).should.be(value(2L));\n    evaluate(`http_requests{method == \"GET\", status == \"200\"}.count`, ctx).should.be(value(1L));\n</search>\n<replace>\n    // Basic attribute filter \u2014 Prometheus single = syntax\n    evaluate(`http_requests{method = \"GET\"}.count`, ctx).should.be(value(2L));\n    evaluate(`http_requests{method = \"POST\"}.count`, ctx).should.be(value(2L));\n    evaluate(`http_requests{method = \"GET\", status = \"200\"}.count`, ctx).should.be(value(1L));\n\n    // Double == also works\n    evaluate(`http_requests{method == \"GET\"}.count`, ctx).should.be(value(2L));\n</replace>\n</edit>\n\nNow add a lexer test for the `=` token:\n\n<edit file=\"source/decel/lexer.d\">\n<search>\n@(\"Lexer: unary negation and subtraction\")\n</search>\n<replace>\n@(\"Lexer: single = token\")\nunittest\n{\n    import std.algorithm : map;\n    import dshould;\n\n    auto tokens = tokenize(`a = \"b\"`);\n    with (Token.Kind)\n        tokens.map!\"a.kind\".should.be([ident, eq, stringLit, eof]);\n\n    // == is still a separate token\n    auto tokens2 = tokenize(`a == \"b\"`);\n    with (Token.Kind)\n        tokens2.map!\"a.kind\".should.be([ident, eqEq, stringLit, eof]);\n}\n\n@(\"Lexer: unary negation and subtraction\")\n</replace>\n</edit>\n\nAlso update the Prometheus example in the README to use single `=`:\n\n<edit file=\"README.md\">\n<search>\nThen in CEL \u2014 exactly Prometheus syntax:\n```cel\nhttp_requests_total{method == \"GET\", status == \"200\"}[0].value\nhttp_requests_total{method == \"GET\"}.all(s, s.value > 100)\nhttp_requests_total{}.count\n```\n</search>\n<replace>\nThen in CEL \u2014 exactly Prometheus syntax:\n```cel\nhttp_requests_total{method = \"GET\", status = \"200\"}[0].value\nhttp_requests_total{method = \"GET\"}.all(s, s.value > 100)\nhttp_requests_total{}.count\n```\n\nBoth `=` and `==` are accepted inside attribute filters.\n</replace>\n</edit>\n\n<edit file=\"TODO.md\">\n<search>\n- [x] `Entry.evalContinuation()` \u2014 arbitrary postfix syntax parsing (e.g. `{attr == \"val\"}`)\n</search>\n<replace>\n- [x] `Entry.evalContinuation()` \u2014 arbitrary postfix syntax parsing (e.g. `{attr = \"val\"}`)\n- [x] Single `=` token \u2014 enables Prometheus-native `{key = \"value\"}` filter syntax\n</replace>\n</edit>\n\n<run_tests/>\n\n<commit message=\"Add single = token for Prometheus-native attribute filter syntax\n\n- New Token.Kind.eq for single '=' (lexer already handled '==' first)\n- evalContinuation test accepts both = and == in {attr} filters\n- Lexer test for = vs == distinction\n- README updated with Prometheus-native single = examples\n- TODO updated\" />\n\nDone! The lexer now produces `Token.Kind.eq` for single `=` (the two-char `==` check runs first so `eqEq` is unaffected). The test's Prometheus filter syntax now uses single `=` \u2014 `http_requests{method = \"GET\", status = \"200\"}` \u2014 while `==` still works as a fallback.",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/lexer.d",
+          "modified_files": [
+            "source/decel/lexer.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in README.md",
+          "modified_files": [
+            "README.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in TODO.md",
+          "modified_files": [
+            "TODO.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: Entry.evalContinuation() \u2014 non-matching falls through:\ndecel.eval.Eval: Entry.methodMacro() \u2014 entry-level method macros:\ndecel.eval.Eval: Entry.methodMacro() \u2014 non-matching falls through:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: Entry with both asList() and asValue():\ndecel.eval.Eval: Entry.asList() \u2014 entry that acts as a list:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: Entry.asValue() \u2014 entry that unwraps to a scalar:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: now() function:\ndecel.eval.Eval: now() with arithmetic:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: now() rejects arguments:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: numeric literals:\ndecel.value.Value: deep equality:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: single = token:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: Entry.evalContinuation() \u2014 Prometheus {attr} filter syntax:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: lazy List subclass:\n\nTime taken: 2 ms, 596 \u03bcs, and 8 hnsecs\n67 test(s) run, 0 failed.\n\nOK!\n\n",
+          "output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: Entry.evalContinuation() \u2014 non-matching falls through:\ndecel.eval.Eval: Entry.methodMacro() \u2014 entry-level method macros:\ndecel.eval.Eval: Entry.methodMacro() \u2014 non-matching falls through:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: Entry with both asList() and asValue():\ndecel.eval.Eval: Entry.asList() \u2014 entry that acts as a list:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: Entry.asValue() \u2014 entry that unwraps to a scalar:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: now() function:\ndecel.eval.Eval: now() with arithmetic:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: now() rejects arguments:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: numeric literals:\ndecel.value.Value: deep equality:\ndecel.value.Value: construct and check types:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: single = token:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: Entry.evalContinuation() \u2014 Prometheus {attr} filter syntax:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: lazy List subclass:\n\nTime taken: 2 ms, 596 \u03bcs, and 8 hnsecs\n67 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "727446a96c14",
+          "message": "Committed: 4 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
         }
       ]
     }

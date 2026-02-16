@@ -2766,7 +2766,7 @@ unittest
             return new ArrayList(elems);
         }
 
-        /// Parse {key == "val", ...} continuation syntax.
+        /// Parse {key = "val", ...} or {key == "val", ...} continuation syntax.
         override Nullable!Value evalContinuation(Value self, ref TokenRange r,
                 const Env env, Context ctx)
         {
@@ -2775,19 +2775,22 @@ unittest
 
             r.advance(); // consume '{'
 
-            // Parse key == expr pairs
+            // Parse key = expr or key == expr pairs
             string[string] filters;
             if (r.peek().kind != Token.Kind.rbrace)
             {
                 auto keyTok = r.expect(Token.Kind.ident);
-                r.expect(Token.Kind.eqEq);
+                // Accept both = and == for Prometheus compatibility
+                if (!r.match(Token.Kind.eq))
+                    r.expect(Token.Kind.eqEq);
                 auto val = parseExpr(r, env, ctx, 0);
                 filters[keyTok.text] = val.get!string;
 
                 while (r.match(Token.Kind.comma))
                 {
                     keyTok = r.expect(Token.Kind.ident);
-                    r.expect(Token.Kind.eqEq);
+                    if (!r.match(Token.Kind.eq))
+                        r.expect(Token.Kind.eqEq);
                     val = parseExpr(r, env, ctx, 0);
                     filters[keyTok.text] = val.get!string;
                 }
@@ -2824,10 +2827,13 @@ unittest
 
     auto ctx = contextFrom(["http_requests": Value(cast(Entry) metric)]);
 
-    // Basic attribute filter
+    // Basic attribute filter — Prometheus single = syntax
+    evaluate(`http_requests{method = "GET"}.count`, ctx).should.be(value(2L));
+    evaluate(`http_requests{method = "POST"}.count`, ctx).should.be(value(2L));
+    evaluate(`http_requests{method = "GET", status = "200"}.count`, ctx).should.be(value(1L));
+
+    // Double == also works
     evaluate(`http_requests{method == "GET"}.count`, ctx).should.be(value(2L));
-    evaluate(`http_requests{method == "POST"}.count`, ctx).should.be(value(2L));
-    evaluate(`http_requests{method == "GET", status == "200"}.count`, ctx).should.be(value(1L));
 
     // Empty filter returns all
     evaluate(`http_requests{}.count`, ctx).should.be(value(4L));

@@ -421,10 +421,12 @@ class MetricEntry : Entry
 
 Then in CEL — exactly Prometheus syntax:
 ```cel
-http_requests_total{method == "GET", status == "200"}[0].value
-http_requests_total{method == "GET"}.all(s, s.value > 100)
+http_requests_total{method = "GET", status = "200"}[0].value
+http_requests_total{method = "GET"}.all(s, s.value > 100)
 http_requests_total{}.count
 ```
+
+Both `=` and `==` are accepted inside attribute filters.
 
 The continuation fires at the highest precedence (same level as `.` and
 `[]`), so `metric{...}.field` and `metric{...}[0]` chain naturally.
