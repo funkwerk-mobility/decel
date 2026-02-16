@@ -36,12 +36,9 @@
 - [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`
 - [x] `.matches()` regex method — `s.matches(re)` for full-string regex matching
 - [x] Null semantics: `null == null` → true, `null != X` → true, null arithmetic → error
+- [x] Cross-type numeric comparison (`1u == 1`, `-1 < 1u`, `1u + 1`, etc.)
 
 ## 🎯 1.0.0 Blockers
-
-- [ ] **Cross-type numeric comparison** — `1u == 1` should be `true`,
-      `1u < 2` should work, `1.0 == 1` should be `true`. Currently
-      uint and int are separate types with no cross-comparison.
 
 - [ ] **Duration and timestamp types** — CEL has `google.protobuf.Timestamp`
       and `google.protobuf.Duration` as first-class types. Use D's

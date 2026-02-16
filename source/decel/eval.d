@@ -392,6 +392,83 @@ private bool isErr(Value v)
     return v.type == Value.Type.err;
 }
 
+/// Cross-type int×uint comparison helper.
+/// Compares a long against a ulong for ordering operators.
+/// When `swapped` is true, the original order was (uint, int) so comparison
+/// direction must be reversed.
+private Value crossCompare(long intVal, ulong uintVal, Token.Kind op, bool swapped)
+{
+    // Determine the relationship: intVal vs uintVal
+    bool intLess;
+    bool equal;
+    if (intVal < 0)
+    {
+        intLess = true;
+        equal = false;
+    }
+    else
+    {
+        auto asUlong = cast(ulong) intVal;
+        intLess = asUlong < uintVal;
+        equal = asUlong == uintVal;
+    }
+
+    // Without swap: expression is (int OP uint), so intLess means "lhs < rhs"
+    // With swap: expression was (uint OP int), so we reverse the sense
+    bool lhsLess = swapped ? (!intLess && !equal) : intLess;
+    bool lhsEqual = equal;
+
+    switch (op)
+    {
+    case Token.Kind.lt:
+        return Value(lhsLess);
+    case Token.Kind.ltEq:
+        return Value(lhsLess || lhsEqual);
+    case Token.Kind.gt:
+        return Value(!lhsLess && !lhsEqual);
+    case Token.Kind.gtEq:
+        return Value(!lhsLess);
+    default:
+        return Value.err("unsupported comparison operator for int/uint");
+    }
+}
+
+/// Cross-type int×uint binary operation.
+/// When `swapped` is true, the original order was (uint, int) so comparison
+/// direction must be reversed.
+private Value crossNumericOp(long intVal, ulong uintVal, Token.Kind op, bool swapped = false)
+{
+    switch (op)
+    {
+    case Token.Kind.eqEq:
+        if (intVal < 0)
+            return Value(false);
+        return Value(cast(ulong) intVal == uintVal);
+    case Token.Kind.bangEq:
+        if (intVal < 0)
+            return Value(true);
+        return Value(cast(ulong) intVal != uintVal);
+    case Token.Kind.lt:
+    case Token.Kind.ltEq:
+    case Token.Kind.gt:
+    case Token.Kind.gtEq:
+        return crossCompare(intVal, uintVal, op, swapped);
+        // Arithmetic: promote uint to long
+    case Token.Kind.plus:
+    case Token.Kind.minus:
+    case Token.Kind.star:
+    case Token.Kind.slash:
+    case Token.Kind.percent:
+        if (uintVal > cast(ulong) long.max)
+            return Value.err("uint value too large for int arithmetic");
+        if (swapped)
+            return numericBinop!long(cast(long) uintVal, intVal, op);
+        return numericBinop!long(intVal, cast(long) uintVal, op);
+    default:
+        return Value.err("unsupported operator for int/uint");
+    }
+}
+
 /// Dispatch a binary op over two numeric values of the same type.
 /// Handles arithmetic (+, -, *, /, %) and comparison (<, <=, >, >=, ==, !=).
 private Value numericBinop(T)(T l, T r, Token.Kind op)
@@ -446,6 +523,16 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
     if (isErr(rhs))
         return rhs;
 
+    // Null equality: null == null → true, null != X → true
+    if (lhs.type == Value.Type.null_ || rhs.type == Value.Type.null_)
+    {
+        if (op == Token.Kind.eqEq)
+            return Value(lhs.type == Value.Type.null_ && rhs.type == Value.Type.null_);
+        if (op == Token.Kind.bangEq)
+            return Value(lhs.type != Value.Type.null_ || rhs.type != Value.Type.null_);
+        return Value.err("unsupported operator " ~ kindName(op) ~ " for null");
+    }
+
     // Try each numeric type pair via static foreach.
     alias NumericTypes = imported!"std.meta".AliasSeq!(long, ulong);
     static foreach (T; NumericTypes)
@@ -456,6 +543,20 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
             if (!l.isNull && !r.isNull)
                 return numericBinop!T(l.get, r.get, op);
         }
+    }
+
+    // Cross-type int×uint dispatch
+    {
+        auto li = tryGet!long(lhs);
+        auto ru = tryGet!ulong(rhs);
+        if (!li.isNull && !ru.isNull)
+            return crossNumericOp(li.get, ru.get, op);
+    }
+    {
+        auto lu = tryGet!ulong(lhs);
+        auto ri = tryGet!long(rhs);
+        if (!lu.isNull && !ri.isNull)
+            return crossNumericOp(ri.get, lu.get, op, true); // swapped
     }
 
     // Double (with int/uint promotion)
@@ -1636,4 +1737,67 @@ unittest
     // Empty string
     evaluate(`"".matches("")`, emptyContext()).should.be(value(true));
     evaluate(`"".matches(".")`, emptyContext()).should.be(value(false));
+}
+
+@("Eval: null semantics")
+unittest
+{
+    import dshould;
+
+    // null == null → true
+    evaluate("null == null", emptyContext()).should.be(value(true));
+    // null != non-null → true
+    evaluate("null != 1", emptyContext()).should.be(value(true));
+    evaluate("1 != null", emptyContext()).should.be(value(true));
+    evaluate(`null != "x"`, emptyContext()).should.be(value(true));
+    // null == non-null → false
+    evaluate("null == 1", emptyContext()).should.be(value(false));
+    evaluate("1 == null", emptyContext()).should.be(value(false));
+    // null arithmetic → error
+    evaluate("null + 1", emptyContext()).type.should.be(Value.Type.err);
+    evaluate("null < 1", emptyContext()).type.should.be(Value.Type.err);
+}
+
+@("Eval: cross-type numeric comparison")
+unittest
+{
+    import dshould;
+
+    // int vs uint equality
+    evaluate("1u == 1", emptyContext()).should.be(value(true));
+    evaluate("1 == 1u", emptyContext()).should.be(value(true));
+    evaluate("1u != 2", emptyContext()).should.be(value(true));
+    evaluate("1u != 1", emptyContext()).should.be(value(false));
+
+    // int vs uint ordering
+    evaluate("1u < 2", emptyContext()).should.be(value(true));
+    evaluate("2u > 1", emptyContext()).should.be(value(true));
+    evaluate("1u <= 1", emptyContext()).should.be(value(true));
+    evaluate("1u >= 1", emptyContext()).should.be(value(true));
+    evaluate("3u > 2", emptyContext()).should.be(value(true));
+    evaluate("1 < 2u", emptyContext()).should.be(value(true));
+    evaluate("2 > 1u", emptyContext()).should.be(value(true));
+    evaluate("1 <= 1u", emptyContext()).should.be(value(true));
+    evaluate("1 >= 1u", emptyContext()).should.be(value(true));
+
+    // negative int vs uint
+    evaluate("-1 < 1u", emptyContext()).should.be(value(true));
+    evaluate("-1 == 1u", emptyContext()).should.be(value(false));
+    evaluate("-1 != 1u", emptyContext()).should.be(value(true));
+    evaluate("-1 <= 1u", emptyContext()).should.be(value(true));
+    evaluate("-1 > 1u", emptyContext()).should.be(value(false));
+    evaluate("-1 >= 1u", emptyContext()).should.be(value(false));
+
+    // cross-type arithmetic
+    evaluate("1u + 1", emptyContext()).type.should.not.be(Value.Type.err);
+    evaluate("3u - 1", emptyContext()).type.should.not.be(Value.Type.err);
+    evaluate("2u * 3", emptyContext()).type.should.not.be(Value.Type.err);
+    evaluate("1 + 1u", emptyContext()).type.should.not.be(Value.Type.err);
+    evaluate("3 - 1u", emptyContext()).type.should.not.be(Value.Type.err);
+
+    // double promotion from either type
+    evaluate("1.0 == 1", emptyContext()).should.be(value(true));
+    evaluate("1.0 == 1u", emptyContext()).should.be(value(true));
+    evaluate("1 + 1.5", emptyContext()).should.be(value(2.5));
+    evaluate("1u + 1.5", emptyContext()).should.be(value(2.5));
 }
