@@ -838,6 +838,42 @@
       "streaming": true,
       "actual_cost": 0.13455325,
       "generation_id": "gen-1771236484-ZkvlXB3e86T2LZ3Yj9Bv"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236768311.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236768311.json",
+      "timestamp": 1771236768.313479,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.0615875,
+      "generation_id": "gen-1771236768-tq5NBjERR8QhcRj3je8E"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236776846.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236776846.json",
+      "timestamp": 1771236776.8482149,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.40521875,
+      "generation_id": "gen-1771236777-GrghSncf3RN3S98wNwvs"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236790189.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236790189.json",
+      "timestamp": 1771236790.190772,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.114069,
+      "generation_id": "gen-1771236790-kHFETe26ezslFfU9YAj4"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236848724.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236848724.json",
+      "timestamp": 1771236848.7257314,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.1154685,
+      "generation_id": "gen-1771236849-wXNNHX5a1vccDbrEMTaU"
     }
   ],
   "messages": [
@@ -3425,6 +3461,114 @@
         {
           "commit": "d5bbbaaa0353",
           "message": "Committed: 1 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: cfbbdc74",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "looks good yeah. is README up to date? any other blockers? can you explicitly document how you'd expose an existing data structure to decel?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me review the README against current state and then add the data structure integration docs.",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"from_id\": \"123\", \"to_id\": \"128\", \"summary\": \"DRY'd valueEquals with unsafeGet (commit d5bbbaaa). DRY'd string methods into evalStringMethod() and numeric casts into evalNumericCast!T template (commit from latest edits). All 58 tests pass.\"}",
+            "name": "compact"
+          },
+          "id": "toolu_01GvWmDiwgfWp9XVumJ6Qrf6",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_01GvWmDiwgfWp9XVumJ6Qrf6",
+      "content": "{\"compact\": true, \"from_id\": \"123\", \"success\": true, \"summary\": \"DRY'd valueEquals with unsafeGet (commit d5bbbaaa). DRY'd string methods into evalStringMethod() and numeric casts into evalNumericCast!T template (commit from latest edits). All 58 tests pass.\", \"to_id\": \"128\"}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood call. Let me audit the README against actual code state and add a proper \"Integrating Your Data\" section.\n\nLooking at what's in the README vs reality:\n\n1. **Types table** \u2014 looks correct\n2. **Entry section** \u2014 good, shows subclassing\n3. **List section** \u2014 good, shows lazy List subclass\n4. **Missing**: How to expose a full D struct/class with both fields AND list properties. The Entry + List story needs to be shown working together.\n5. **Missing**: The `cast(List)` requirement when constructing Values from List subclasses \u2014 users will hit this.\n6. **Custom Macros section** references `Token.Kind` from `decel.lexer` but we don't export `Token` from package.d \u2014 need to fix that or update the docs.\n\nLet me check what's exported:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"pattern\": \"public import decel.lexer\", \"file\": \"source/decel/package.d\"}",
+            "name": "grep_context"
+          },
+          "id": "toolu_016Lh58ExqwFmqoYLaah33fs",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_016Lh58ExqwFmqoYLaah33fs",
+      "content": "{\"message\": \"No matches found for pattern: public import decel.lexer\", \"side_effects\": [\"ephemeral_result\"], \"snippets\": [], \"success\": true, \"total_matches\": 0}",
+      "_skip_display": true
+    },
+    {
+      "role": "system",
+      "content": "\ud83d\udd27 **Tool call:** `grep_context`\n```json\n{\n  \"file\": \"source/decel/package.d\",\n  \"pattern\": \"public import decel.lexer\"\n}\n```\n**Result:**\n```json\n{\n  \"message\": \"No matches found for pattern: public import decel.lexer\",\n  \"side_effects\": [\n    \"ephemeral_result\"\n  ],\n  \"snippets\": [],\n  \"success\": true,\n  \"total_matches\": 0\n}\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "Right \u2014 the custom macros example references `Token.Kind` and `TokenRange` but we don't export `Token` or `TokenRange` from `package.d`. And the bigger missing piece is a cohesive \"integrating your data\" guide. Let me fix both and add the integration docs.\n\n<edit file=\"source/decel/package.d\">\n<search>\n// Extension points\npublic import decel.env : Env, Macro, MethodMacro;\n</search>\n<replace>\n// Extension points\npublic import decel.env : Env, Macro, MethodMacro, TokenRange;\n\n// Lexer (needed for custom macros)\npublic import decel.lexer : Token;\n\n// Parser (needed for custom macros that parse arguments)\npublic import decel.eval : parseExpr;\n</replace>\n</edit>\n\nNow update the README with a comprehensive \"Integrating Your Data\" section and fix the custom macros section to not reference private imports:\n\n<edit file=\"README.md\">\n<search>\n## Nested Objects via Entry\n\nFor structured data, subclass `Entry` to provide lazy field resolution:\n\n```d\nclass Request : Entry\n{\n    override Value resolve(string name)\n    {\n        switch (name)\n        {\n            case \"method\": return value(\"GET\");\n            case \"path\":   return value(\"/api/users\");\n            case \"auth\":   return value([\"user\": value(\"alice\")]);\n            default:       return Value.err(\"no such field: \" ~ name);\n        }\n    }\n}\n\nauto ctx = contextFrom([\"request\": Value(new Request())]);\nevaluate(`request.method == \"GET\"`, ctx);      // true\nevaluate(`request.auth.user`, ctx);            // \"alice\"\nevaluate(`has(request.auth)`, ctx);            // true\nevaluate(`has(request.missing)`, ctx);         // false\n```\n\n## Lists and Lazy Lists\n\nLists are represented by the abstract `List` class. Literal lists use\nthe built-in `ArrayList` (backed by `Value[]`), but you can subclass\n`List` directly for lazy/virtual access over large datasets:\n\n```d\nclass DatabaseRows : List\n{\n    override size_t length() { return 1_000_000; }\n\n    override Value index(size_t i)\n    {\n        // Fetch row i on demand\n        return value(cast(long) i);\n    }\n}\n\nauto ctx = contextFrom([\"rows\": Value(cast(List) new DatabaseRows())]);\nevaluate(\"rows[42]\", ctx);            // fetches only row 42\nevaluate(\"size(rows)\", ctx);           // 1000000 (no materialization)\nevaluate(\"rows.exists(r, r == 42)\", ctx);  // iterates lazily\n```\n\nAll list operations work uniformly on both `ArrayList` and custom `List`\nsubclasses: `size()`, `[index]`, `in`, `+` concatenation, and all\ncomprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).\n\n`List` also supports D-side `foreach` iteration via `opApply`:\n\n```d\nauto result = evaluate(\"[1, 2, 3]\", emptyContext());\nauto list = result.get!List;\nforeach (elem; list)\n    writeln(elem.get!long);\n```\n</search>\n<replace>\n## Integrating Your Data\n\ndecel provides two abstract classes for exposing D data structures to\nCEL expressions without converting everything to `Value` up front.\n\n### Entry \u2014 Lazy Field Access\n\nSubclass `Entry` to expose an object with named fields. The `.field`\nand `[\"field\"]` syntax both call `resolve()`. Return `Value.err` for\nunknown fields \u2014 this makes `has()` work automatically.\n\n```d\nclass HttpRequest : Entry\n{\n    private string _method;\n    private string _path;\n    private string[string] _headers;\n\n    this(string method, string path, string[string] headers)\n    {\n        _method = method;\n        _path = path;\n        _headers = headers;\n    }\n\n    override Value resolve(string name)\n    {\n        switch (name)\n        {\n            case \"method\":  return value(_method);\n            case \"path\":    return value(_path);\n            case \"headers\":\n                Value[string] hmap;\n                foreach (k, v; _headers)\n                    hmap[k] = value(v);\n                return Value(hmap);\n            default:\n                return Value.err(\"no such field: \" ~ name);\n        }\n    }\n}\n\nauto req = new HttpRequest(\"GET\", \"/api/users\",\n    [\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer tok\"]);\nauto ctx = contextFrom([\"request\": Value(cast(Entry) req)]);\n\nevaluate(`request.method == \"GET\"`, ctx);                // true\nevaluate(`request.path.startsWith(\"/api\")`, ctx);        // true\nevaluate(`\"Authorization\" in request.headers`, ctx);     // true\nevaluate(`has(request.method)`, ctx);                    // true\nevaluate(`has(request.missing)`, ctx);                   // false\n```\n\n### List \u2014 Lazy Indexing\n\nSubclass `List` to expose a sequence with `length()` and `index(i)`\nwithout materializing a `Value[]` array. All list operations work:\n`size()`, `[i]`, `in`, `+`, and comprehensions.\n\n```d\nclass DatabaseRows : List\n{\n    private long _count;\n\n    this(long count) { _count = count; }\n\n    override size_t length() { return cast(size_t) _count; }\n\n    override Value index(size_t i)\n    {\n        // Fetch row i on demand from your database\n        return value(cast(long) i);\n    }\n}\n\nauto ctx = contextFrom([\"rows\": Value(cast(List) new DatabaseRows(1_000_000))]);\nevaluate(\"rows[42]\", ctx);                     // fetches only row 42\nevaluate(\"size(rows)\", ctx);                   // 1000000 (no materialization)\nevaluate(\"rows.exists(r, r == 42)\", ctx);      // iterates lazily\n```\n\n### Combining Entry and List\n\nFor real-world data models, nest Entry and List to expose a complete\nobject graph. CEL expressions navigate it naturally:\n\n```d\nclass User : Entry\n{\n    string name;\n    string role;\n\n    override Value resolve(string field)\n    {\n        switch (field)\n        {\n            case \"name\": return value(name);\n            case \"role\": return value(role);\n            default:     return Value.err(\"no such field: \" ~ field);\n        }\n    }\n}\n\nclass UserList : List\n{\n    User[] users;\n\n    override size_t length() { return users.length; }\n\n    override Value index(size_t i)\n    {\n        return Value(cast(Entry) users[i]);\n    }\n}\n\nauto users = new UserList();\nusers.users = [makeUser(\"alice\", \"admin\"), makeUser(\"bob\", \"viewer\")];\n\nauto ctx = contextFrom([\n    \"users\": Value(cast(List) users),\n    \"minRole\": value(\"admin\"),\n]);\n\n// Navigate the full object graph from CEL\nevaluate(`users[0].name`, ctx);                              // \"alice\"\nevaluate(`users.exists(u, u.role == \"admin\")`, ctx);         // true\nevaluate(`users.filter(u, u.role == minRole).size()`, ctx);  // 1\nevaluate(`users.all(u, has(u.name))`, ctx);                  // true\n```\n\n### Scalar Values\n\nFor simple bindings, use `value()` to wrap D types directly:\n\n```d\nauto ctx = contextFrom([\n    \"name\":      value(\"alice\"),\n    \"level\":     value(5L),\n    \"active\":    value(true),\n    \"score\":     value(3.14),\n    \"tags\":      value([value(\"a\"), value(\"b\")]),\n    \"metadata\":  value([\"env\": value(\"prod\"), \"region\": value(\"us-east-1\")]),\n]);\n```\n\n`value()` accepts `long`, `ulong`, `double`, `bool`, `string`,\n`Value[]` (creates an `ArrayList`), `Duration`, and `SysTime`.\n\n> **Note on casts**: When passing `Entry` or `List` subclasses into a\n> `Value`, use an explicit cast: `Value(cast(Entry) myEntry)` or\n> `Value(cast(List) myList)`. This is needed because D's `SumType`\n> stores the abstract base class, not your concrete subclass.\n</replace>\n</edit>"
+    },
+    {
+      "role": "user",
+      "content": "\u274c `edit` failed:\n\nSearch text not found in README.md.\n\n**CLOSE MATCH - the text exists but has differences.\nCheck the diff below to see exactly what's different.**\n\nFound 92.0% similar text at line 161 (edit distance: 150):\n\n```\n\n## Nested Objects via Entry\n\n    ...\ntry\n    evaluate(`1 +`, emptyContext());\n```\n\nDiff (--- your search vs +++ actual file):\n```diff\n--- expected\n+++ actual\n@@ -1,3 +1,4 @@\n+\n ## Nested Objects via Entry\n \n For structured data, subclass `Entry` to provide lazy field resolution:\n@@ -52,11 +53,10 @@\n subclasses: `size()`, `[index]`, `in`, `+` concatenation, and all\n comprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).\n \n-`List` also supports D-side `foreach` iteration via `opApply`:\n+## Error Handling\n+\n+Parse errors (syntax errors, unexpected tokens) throw `EvalException`:\n \n ```d\n-auto result = evaluate(\"[1, 2, 3]\", emptyContext());\n-auto list = result.get!List;\n-foreach (elem; list)\n-    writeln(elem.get!long);\n-```+try\n+    evaluate(`1 +`, emptyContext());\n```",
+      "_ui_only": true
+    },
+    {
+      "role": "assistant",
+      "content": "The diff shows the `opApply` section was already removed (from a previous commit) and replaced with `## Error Handling`. Let me fix the search text to match the actual file, and also the leading blank line:\n\n<edit file=\"README.md\">\n<search>\n## Nested Objects via Entry\n\nFor structured data, subclass `Entry` to provide lazy field resolution:\n\n```d\nclass Request : Entry\n{\n    override Value resolve(string name)\n    {\n        switch (name)\n        {\n            case \"method\": return value(\"GET\");\n            case \"path\":   return value(\"/api/users\");\n            case \"auth\":   return value([\"user\": value(\"alice\")]);\n            default:       return Value.err(\"no such field: \" ~ name);\n        }\n    }\n}\n\nauto ctx = contextFrom([\"request\": Value(new Request())]);\nevaluate(`request.method == \"GET\"`, ctx);      // true\nevaluate(`request.auth.user`, ctx);            // \"alice\"\nevaluate(`has(request.auth)`, ctx);            // true\nevaluate(`has(request.missing)`, ctx);         // false\n```\n\n## Lists and Lazy Lists\n\nLists are represented by the abstract `List` class. Literal lists use\nthe built-in `ArrayList` (backed by `Value[]`), but you can subclass\n`List` directly for lazy/virtual access over large datasets:\n\n```d\nclass DatabaseRows : List\n{\n    override size_t length() { return 1_000_000; }\n\n    override Value index(size_t i)\n    {\n        // Fetch row i on demand\n        return value(cast(long) i);\n    }\n}\n\nauto ctx = contextFrom([\"rows\": Value(cast(List) new DatabaseRows())]);\nevaluate(\"rows[42]\", ctx);            // fetches only row 42\nevaluate(\"size(rows)\", ctx);           // 1000000 (no materialization)\nevaluate(\"rows.exists(r, r == 42)\", ctx);  // iterates lazily\n```\n\nAll list operations work uniformly on both `ArrayList` and custom `List`\nsubclasses: `size()`, `[index]`, `in`, `+` concatenation, and all\ncomprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).\n\n## Error Handling\n</search>\n<replace>\n## Integrating Your Data\n\ndecel provides two abstract classes for exposing D data structures to\nCEL expressions without converting everything to `Value` up front.\n\n### Entry \u2014 Lazy Field Access\n\nSubclass `Entry` to expose an object with named fields. The `.field`\nand `[\"field\"]` syntax both call `resolve()`. Return `Value.err` for\nunknown fields \u2014 this makes `has()` work automatically.\n\n```d\nclass HttpRequest : Entry\n{\n    private string _method;\n    private string _path;\n    private string[string] _headers;\n\n    this(string method, string path, string[string] headers)\n    {\n        _method = method;\n        _path = path;\n        _headers = headers;\n    }\n\n    override Value resolve(string name)\n    {\n        switch (name)\n        {\n            case \"method\":  return value(_method);\n            case \"path\":    return value(_path);\n            case \"headers\":\n                Value[string] hmap;\n                foreach (k, v; _headers)\n                    hmap[k] = value(v);\n                return Value(hmap);\n            default:\n                return Value.err(\"no such field: \" ~ name);\n        }\n    }\n}\n\nauto req = new HttpRequest(\"GET\", \"/api/users\",\n    [\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer tok\"]);\nauto ctx = contextFrom([\"request\": Value(cast(Entry) req)]);\n\nevaluate(`request.method == \"GET\"`, ctx);                // true\nevaluate(`request.path.startsWith(\"/api\")`, ctx);        // true\nevaluate(`\"Authorization\" in request.headers`, ctx);     // true\nevaluate(`has(request.method)`, ctx);                    // true\nevaluate(`has(request.missing)`, ctx);                   // false\n```\n\n### List \u2014 Lazy Indexing\n\nSubclass `List` to expose a sequence with `length()` and `index(i)`\nwithout materializing a `Value[]` array. All list operations work:\n`size()`, `[i]`, `in`, `+`, and comprehensions.\n\n```d\nclass DatabaseRows : List\n{\n    private long _count;\n\n    this(long count) { _count = count; }\n\n    override size_t length() { return cast(size_t) _count; }\n\n    override Value index(size_t i)\n    {\n        // Fetch row i on demand from your database\n        return value(cast(long) i);\n    }\n}\n\nauto ctx = contextFrom([\"rows\": Value(cast(List) new DatabaseRows(1_000_000))]);\nevaluate(\"rows[42]\", ctx);                     // fetches only row 42\nevaluate(\"size(rows)\", ctx);                   // 1000000 (no materialization)\nevaluate(\"rows.exists(r, r == 42)\", ctx);      // iterates lazily\n```\n\n### Combining Entry and List\n\nFor real-world data models, nest Entry and List to expose a complete\nobject graph. CEL expressions navigate it naturally:\n\n```d\nclass User : Entry\n{\n    string name;\n    string role;\n\n    override Value resolve(string field)\n    {\n        switch (field)\n        {\n            case \"name\": return value(name);\n            case \"role\": return value(role);\n            default:     return Value.err(\"no such field: \" ~ field);\n        }\n    }\n}\n\nclass UserList : List\n{\n    User[] users;\n\n    override size_t length() { return users.length; }\n\n    override Value index(size_t i)\n    {\n        return Value(cast(Entry) users[i]);\n    }\n}\n\nauto users = new UserList();\nusers.users = [makeUser(\"alice\", \"admin\"), makeUser(\"bob\", \"viewer\")];\n\nauto ctx = contextFrom([\n    \"users\": Value(cast(List) users),\n    \"minRole\": value(\"admin\"),\n]);\n\n// Navigate the full object graph from CEL\nevaluate(`users[0].name`, ctx);                              // \"alice\"\nevaluate(`users.exists(u, u.role == \"admin\")`, ctx);         // true\nevaluate(`users.filter(u, u.role == minRole).size()`, ctx);  // 1\nevaluate(`users.all(u, has(u.name))`, ctx);                  // true\n```\n\n### Scalar Values\n\nFor simple bindings, use `value()` to wrap D types directly:\n\n```d\nauto ctx = contextFrom([\n    \"name\":      value(\"alice\"),\n    \"level\":     value(5L),\n    \"active\":    value(true),\n    \"score\":     value(3.14),\n    \"tags\":      value([value(\"a\"), value(\"b\")]),\n    \"metadata\":  value([\"env\": value(\"prod\"), \"region\": value(\"us-east-1\")]),\n]);\n```\n\n`value()` accepts `long`, `ulong`, `double`, `bool`, `string`,\n`Value[]` (creates an `ArrayList`), `Duration`, and `SysTime`.\n\n> **Note on casts**: When passing `Entry` or `List` subclasses into a\n> `Value`, use an explicit cast: `Value(cast(Entry) myEntry)` or\n> `Value(cast(List) myList)`. This is needed because D's `SumType`\n> stores the abstract base class, not your concrete subclass.\n\n## Error Handling\n</replace>\n</edit>\n\nNow update the Custom Macros section to not reference private imports:\n\n<edit file=\"README.md\">\n<search>\n## Custom Macros\n\nExtend the evaluator with custom function-call macros:\n\n```d\nimport decel;\nimport decel.env : TokenRange, Env;\nimport decel.eval : parseExpr;\n\nMacro[string] customs;\ncustoms[\"always_true\"] = delegate Value(ref TokenRange r, const Env env, Context ctx) {\n    parseExpr(r, env, ctx, 0);  // parse and discard the argument\n    r.expect(Token.Kind.rparen); // consume closing ')'\n    return value(true);\n};\n\nevaluateWithMacros(`always_true(anything)`, emptyContext(), customs);  // true\n```\n\nMacros receive the token stream and are responsible for parsing their own\narguments and consuming the closing `)`.\n</search>\n<replace>\n## Custom Macros\n\nExtend the evaluator with custom function-call macros:\n\n```d\nimport decel;\n\nMacro[string] customs;\ncustoms[\"always_true\"] = delegate Value(ref TokenRange r, const Env env, Context ctx) {\n    parseExpr(r, env, ctx, 0);  // parse and discard the argument\n    r.expect(Token.Kind.rparen); // consume closing ')'\n    return value(true);\n};\n\nevaluateWithMacros(`always_true(anything)`, emptyContext(), customs);  // true\n```\n\nMacros receive the token stream and are responsible for parsing their own\narguments and consuming the closing `)`. All needed types (`Macro`,\n`TokenRange`, `Token`, `parseExpr`) are exported from the `decel` package.\n</replace>\n</edit>\n\n<run_tests/>\n\n<commit message=\"Update public API and README for data integration\n\n- Export Token, TokenRange, parseExpr from package.d so custom macro\n  authors don't need private imports\n- Replace Entry/List sections with comprehensive 'Integrating Your Data'\n  guide showing Entry, List, combined Entry+List object graphs, scalar\n  bindings, and the cast requirement for SumType storage\n- Update Custom Macros section to use only public imports\n\" />\n\nThe README now has a proper \"Integrating Your Data\" section covering:\n\n1. **Entry** \u2014 lazy field access with `has()` support\n2. **List** \u2014 lazy indexing without materialization  \n3. **Combined Entry + List** \u2014 full object graph navigation (the key missing piece)\n4. **Scalar values** \u2014 the `value()` helper for simple types\n5. **Cast note** \u2014 documents the `cast(Entry)`/`cast(List)` requirement that would trip people up\n\nAlso fixed `package.d` to export `Token`, `TokenRange`, and `parseExpr` so the custom macros example works with just `import decel;`.",
+      "_inline_results": [
+        {
+          "message": "Replaced in README.md",
+          "modified_files": [
+            "README.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in README.md",
+          "modified_files": [
+            "README.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.eval.Eval: string methods:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: type casts:\n\nTime taken: 2 ms, 223 \u03bcs, and 5 hnsecs\n56 test(s) run, 0 failed.\n\nOK!\n\n",
+          "output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: unknown variable from context:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.eval.Eval: string methods:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: type casts:\n\nTime taken: 2 ms, 223 \u03bcs, and 5 hnsecs\n56 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "dad09eb60124",
+          "message": "Committed: 2 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],

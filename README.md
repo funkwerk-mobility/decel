@@ -159,59 +159,158 @@ auto ctx = contextFrom([
 evaluate("timeout.seconds() > 10", ctx);  // true
 ```
 
-## Nested Objects via Entry
+## Integrating Your Data
 
-For structured data, subclass `Entry` to provide lazy field resolution:
+decel provides two abstract classes for exposing D data structures to
+CEL expressions without converting everything to `Value` up front.
+
+### Entry — Lazy Field Access
+
+Subclass `Entry` to expose an object with named fields. The `.field`
+and `["field"]` syntax both call `resolve()`. Return `Value.err` for
+unknown fields — this makes `has()` work automatically.
 
 ```d
-class Request : Entry
+class HttpRequest : Entry
 {
+    private string _method;
+    private string _path;
+    private string[string] _headers;
+
+    this(string method, string path, string[string] headers)
+    {
+        _method = method;
+        _path = path;
+        _headers = headers;
+    }
+
     override Value resolve(string name)
     {
         switch (name)
         {
-            case "method": return value("GET");
-            case "path":   return value("/api/users");
-            case "auth":   return value(["user": value("alice")]);
-            default:       return Value.err("no such field: " ~ name);
+            case "method":  return value(_method);
+            case "path":    return value(_path);
+            case "headers":
+                Value[string] hmap;
+                foreach (k, v; _headers)
+                    hmap[k] = value(v);
+                return Value(hmap);
+            default:
+                return Value.err("no such field: " ~ name);
         }
     }
 }
 
-auto ctx = contextFrom(["request": Value(new Request())]);
-evaluate(`request.method == "GET"`, ctx);      // true
-evaluate(`request.auth.user`, ctx);            // "alice"
-evaluate(`has(request.auth)`, ctx);            // true
-evaluate(`has(request.missing)`, ctx);         // false
+auto req = new HttpRequest("GET", "/api/users",
+    ["Content-Type": "application/json", "Authorization": "Bearer tok"]);
+auto ctx = contextFrom(["request": Value(cast(Entry) req)]);
+
+evaluate(`request.method == "GET"`, ctx);                // true
+evaluate(`request.path.startsWith("/api")`, ctx);        // true
+evaluate(`"Authorization" in request.headers`, ctx);     // true
+evaluate(`has(request.method)`, ctx);                    // true
+evaluate(`has(request.missing)`, ctx);                   // false
 ```
 
-## Lists and Lazy Lists
+### List — Lazy Indexing
 
-Lists are represented by the abstract `List` class. Literal lists use
-the built-in `ArrayList` (backed by `Value[]`), but you can subclass
-`List` directly for lazy/virtual access over large datasets:
+Subclass `List` to expose a sequence with `length()` and `index(i)`
+without materializing a `Value[]` array. All list operations work:
+`size()`, `[i]`, `in`, `+`, and comprehensions.
 
 ```d
 class DatabaseRows : List
 {
-    override size_t length() { return 1_000_000; }
+    private long _count;
+
+    this(long count) { _count = count; }
+
+    override size_t length() { return cast(size_t) _count; }
 
     override Value index(size_t i)
     {
-        // Fetch row i on demand
+        // Fetch row i on demand from your database
         return value(cast(long) i);
     }
 }
 
-auto ctx = contextFrom(["rows": Value(cast(List) new DatabaseRows())]);
-evaluate("rows[42]", ctx);            // fetches only row 42
-evaluate("size(rows)", ctx);           // 1000000 (no materialization)
-evaluate("rows.exists(r, r == 42)", ctx);  // iterates lazily
+auto ctx = contextFrom(["rows": Value(cast(List) new DatabaseRows(1_000_000))]);
+evaluate("rows[42]", ctx);                     // fetches only row 42
+evaluate("size(rows)", ctx);                   // 1000000 (no materialization)
+evaluate("rows.exists(r, r == 42)", ctx);      // iterates lazily
 ```
 
-All list operations work uniformly on both `ArrayList` and custom `List`
-subclasses: `size()`, `[index]`, `in`, `+` concatenation, and all
-comprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).
+### Combining Entry and List
+
+For real-world data models, nest Entry and List to expose a complete
+object graph. CEL expressions navigate it naturally:
+
+```d
+class User : Entry
+{
+    string name;
+    string role;
+
+    override Value resolve(string field)
+    {
+        switch (field)
+        {
+            case "name": return value(name);
+            case "role": return value(role);
+            default:     return Value.err("no such field: " ~ field);
+        }
+    }
+}
+
+class UserList : List
+{
+    User[] users;
+
+    override size_t length() { return users.length; }
+
+    override Value index(size_t i)
+    {
+        return Value(cast(Entry) users[i]);
+    }
+}
+
+auto users = new UserList();
+users.users = [makeUser("alice", "admin"), makeUser("bob", "viewer")];
+
+auto ctx = contextFrom([
+    "users": Value(cast(List) users),
+    "minRole": value("admin"),
+]);
+
+// Navigate the full object graph from CEL
+evaluate(`users[0].name`, ctx);                              // "alice"
+evaluate(`users.exists(u, u.role == "admin")`, ctx);         // true
+evaluate(`users.filter(u, u.role == minRole).size()`, ctx);  // 1
+evaluate(`users.all(u, has(u.name))`, ctx);                  // true
+```
+
+### Scalar Values
+
+For simple bindings, use `value()` to wrap D types directly:
+
+```d
+auto ctx = contextFrom([
+    "name":      value("alice"),
+    "level":     value(5L),
+    "active":    value(true),
+    "score":     value(3.14),
+    "tags":      value([value("a"), value("b")]),
+    "metadata":  value(["env": value("prod"), "region": value("us-east-1")]),
+]);
+```
+
+`value()` accepts `long`, `ulong`, `double`, `bool`, `string`,
+`Value[]` (creates an `ArrayList`), `Duration`, and `SysTime`.
+
+> **Note on casts**: When passing `Entry` or `List` subclasses into a
+> `Value`, use an explicit cast: `Value(cast(Entry) myEntry)` or
+> `Value(cast(List) myList)`. This is needed because D's `SumType`
+> stores the abstract base class, not your concrete subclass.
 
 ## Error Handling
 
@@ -242,8 +341,6 @@ Extend the evaluator with custom function-call macros:
 
 ```d
 import decel;
-import decel.env : TokenRange, Env;
-import decel.eval : parseExpr;
 
 Macro[string] customs;
 customs["always_true"] = delegate Value(ref TokenRange r, const Env env, Context ctx) {
@@ -256,7 +353,8 @@ evaluateWithMacros(`always_true(anything)`, emptyContext(), customs);  // true
 ```
 
 Macros receive the token stream and are responsible for parsing their own
-arguments and consuming the closing `)`.
+arguments and consuming the closing `)`. All needed types (`Macro`,
+`TokenRange`, `Token`, `parseExpr`) are exported from the `decel` package.
 
 ## License
 

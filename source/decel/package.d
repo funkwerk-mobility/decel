@@ -27,4 +27,10 @@ public import decel.context : Context, contextFrom, emptyContext, bindContext;
 public import decel.eval : evaluate, evaluateWithMacros, EvalException;
 
 // Extension points
-public import decel.env : Env, Macro, MethodMacro;
+public import decel.env : Env, Macro, MethodMacro, TokenRange;
+
+// Lexer (needed for custom macros)
+public import decel.lexer : Token;
+
+// Parser (needed for custom macros that parse arguments)
+public import decel.eval : parseExpr;
