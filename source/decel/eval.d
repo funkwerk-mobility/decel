@@ -4,17 +4,20 @@
  + Tokenizes and evaluates a CEL expression in one pass, producing a Value.
  + Uses Pratt parsing for correct operator precedence.
  +
- + Evaluation errors (division by zero, type mismatches) are represented as
- + Value.err rather than exceptions. This enables natural short-circuit
- + semantics: `false && (1/0 == 1)` evaluates to `false` because `&&`
- + absorbs the error on the right when the left is already false.
+ + Three concerns are cleanly separated:
+ + $(UL
+ +   $(LI `TokenRange` — linear parser state (token cursor))
+ +   $(LI `Env` — global configuration (macros, method macros))
+ +   $(LI `Context` — lexical scope (variable bindings))
+ + )
  +
- + Parse errors (syntax errors, unexpected tokens) still throw EvalException
- + since the parser cannot continue.
+ + Every parse/eval function takes all three explicitly, making data flow
+ + clear and avoiding mutation of shared state.
  +/
 module decel.eval;
 
 import decel.context;
+import decel.env;
 import decel.lexer;
 import decel.value;
 
@@ -22,13 +25,14 @@ import std.conv : to, ConvException;
 import std.sumtype : match;
 
 /++
- + Exception thrown for parse or evaluation errors.
- + Carries the byte offset in the source where the error occurred.
+ + Exception thrown for parse errors (syntax errors, unexpected tokens).
+ + Evaluation errors (division by zero, type mismatches) are represented
+ + as Value.err instead.
  +/
 class EvalException : Exception
 {
     /// Byte offset in the source where the error occurred.
-    size_t position;
+    immutable size_t position;
 
     /// Construct an EvalException with a message and source position.
     this(string msg, size_t pos, string file = __FILE__, size_t line = __LINE__)
@@ -40,377 +44,307 @@ class EvalException : Exception
     }
 }
 
-/// A macro receives the parser to handle its own argument parsing.
-/// The opening '(' has already been consumed; the macro must consume ')'.
-alias Macro = Value delegate(ref Parser parser);
-
-/// A method macro receives the target object and the parser.
-/// The opening '(' has already been consumed; the macro must consume ')'.
-alias MethodMacro = Value delegate(Value target, ref Parser parser);
-
 /// Evaluate a CEL expression string against a context.
 Value evaluate(string source, Context ctx)
 {
-    return evaluateWithMacros(source, ctx, null);
+    auto env = Env.standard();
+    auto tokens = tokenize(source);
+    auto r = TokenRange(tokens, 0);
+    auto result = parseExpr(r, env, ctx, 0);
+    r.expect(Token.Kind.eof);
+    return result;
 }
 
 /// Evaluate a CEL expression with custom macros.
 Value evaluateWithMacros(string source, Context ctx, Macro[string] macros)
 {
+    auto env = Env.withMacros(macros);
     auto tokens = tokenize(source);
-    auto parser = Parser(tokens, ctx, macros);
-    auto result = parser.parseExpr(0);
-    parser.expect(Token.Kind.eof);
+    auto r = TokenRange(tokens, 0);
+    auto result = parseExpr(r, env, ctx, 0);
+    r.expect(Token.Kind.eof);
     return result;
 }
 
-// ── Pratt parser / evaluator ────────────────────────────────────────
+// ── Expression parsing (Pratt) ──────────────────────────────────────
 
-private struct Parser
+/// Parse an expression with the given minimum precedence.
+Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
 {
-    Token[] tokens;
-    Context ctx;
-    size_t pos;
-    Macro[string] macros;
-    MethodMacro[string] methodMacros;
+    auto lhs = parseUnary(r, env, ctx);
 
-    this(Token[] tokens, Context ctx, Macro[string] macros)
+    while (true)
     {
-        this.tokens = tokens;
-        this.ctx = ctx;
-        this.pos = 0;
-        this.macros = macros is null ? builtinMacros() : merge(builtinMacros(), macros);
-        this.methodMacros = builtinMethodMacros();
-    }
+        auto tok = r.peek();
+        auto prec = infixPrec(tok.kind);
+        if (prec < 0 || prec < minPrec)
+            break;
 
-    /// Current token.
-    Token peek()
-    {
-        return tokens[pos];
-    }
-
-    /// Advance and return the consumed token.
-    Token advance()
-    {
-        auto tok = tokens[pos];
-        if (tok.kind != Token.Kind.eof)
-            pos++;
-        return tok;
-    }
-
-    /// Consume a token of the expected kind, or throw.
-    Token expect(Token.Kind kind)
-    {
-        auto tok = peek();
-        if (tok.kind != kind)
-            throw new EvalException("expected " ~ kindName(kind) ~ ", got " ~ tok.toString(),
-                    tok.pos);
-        return advance();
-    }
-
-    /// Try to consume a token of the given kind. Returns true if consumed.
-    bool match(Token.Kind kind)
-    {
-        if (peek().kind == kind)
+        // Ternary conditional: expr ? expr : expr
+        if (tok.kind == Token.Kind.question)
         {
-            advance();
-            return true;
+            r.advance();
+            lhs = parseTernary(r, env, ctx, lhs);
+            continue;
         }
-        return false;
-    }
 
-    // ── Expression parsing (Pratt) ──────────────────────────────────
-
-    /// Parse an expression with the given minimum precedence.
-    Value parseExpr(int minPrec)
-    {
-        auto lhs = parseUnary();
-
-        while (true)
+        // `in` operator
+        if (tok.kind == Token.Kind.inKw)
         {
-            auto tok = peek();
-            auto prec = infixPrec(tok.kind);
-            if (prec < 0 || prec < minPrec)
-                break;
+            r.advance();
+            auto rhs = parseExpr(r, env, ctx, prec + 1);
+            lhs = evalIn(lhs, rhs);
+            continue;
+        }
 
-            // Ternary conditional: expr ? expr : expr
-            if (tok.kind == Token.Kind.question)
+        // Member access: expr.ident
+        if (tok.kind == Token.Kind.dot)
+        {
+            r.advance();
+            auto ident = r.expect(Token.Kind.ident);
+
+            // Method call: expr.ident(args...)
+            if (r.peek().kind == Token.Kind.lparen)
             {
-                advance();
-                lhs = parseTernary(lhs);
-                continue;
-            }
-
-            // `in` operator
-            if (tok.kind == Token.Kind.inKw)
-            {
-                advance();
-                auto rhs = parseExpr(prec + 1);
-                lhs = evalIn(lhs, rhs);
-                continue;
-            }
-
-            // Member access: expr.ident
-            if (tok.kind == Token.Kind.dot)
-            {
-                advance();
-                auto ident = expect(Token.Kind.ident);
-
-                // Method call: expr.ident(args...)
-                if (peek().kind == Token.Kind.lparen)
+                r.advance();
+                // Check method macros first
+                if (auto mm = ident.text in env.methodMacros)
                 {
-                    advance();
-                    // Check method macros first — they handle their own arg parsing
-                    if (auto mm = ident.text in methodMacros)
-                    {
-                        lhs = (*mm)(lhs, this);
-                        continue;
-                    }
-                    auto args = parseArgList();
-                    expect(Token.Kind.rparen);
-                    lhs = evalMethod(lhs, ident.text, args);
+                    lhs = (*mm)(lhs, r, env, ctx);
+                    continue;
                 }
-                else
-                {
-                    lhs = evalMember(lhs, ident.text);
-                }
-                continue;
+                auto args = parseArgList(r, env, ctx);
+                r.expect(Token.Kind.rparen);
+                lhs = evalMethod(lhs, ident.text, args);
             }
-
-            // Index: expr[expr]
-            if (tok.kind == Token.Kind.lbracket)
+            else
             {
-                advance();
-                auto index = parseExpr(0);
-                expect(Token.Kind.rbracket);
-                lhs = evalIndex(lhs, index);
-                continue;
+                lhs = evalMember(lhs, ident.text);
             }
-
-            // Binary operator
-            advance();
-
-            // Short-circuit: && and ||
-            // Both sides are always fully parsed. Error values propagate
-            // naturally: false && err → false, true || err → true.
-            if (tok.kind == Token.Kind.ampAmp)
-            {
-                auto rhs = parseExpr(prec + 1);
-                // false && <anything> → false (absorb RHS errors)
-                if (isFalsy(lhs))
-                    continue; // lhs stays as-is (false)
-                // true && rhs → rhs
-                lhs = rhs;
-                continue;
-            }
-            if (tok.kind == Token.Kind.pipePipe)
-            {
-                auto rhs = parseExpr(prec + 1);
-                // true || <anything> → true (absorb RHS errors)
-                if (isTruthy(lhs))
-                    continue; // lhs stays as-is (true)
-                // false || rhs → rhs
-                lhs = rhs;
-                continue;
-            }
-
-            auto rhs = parseExpr(prec + 1);
-            lhs = evalBinary(tok.kind, lhs, rhs);
+            continue;
         }
 
-        return lhs;
-    }
-
-    /// Parse a unary expression (prefix operators and atoms).
-    Value parseUnary()
-    {
-        auto tok = peek();
-
-        // Unary negation
-        if (tok.kind == Token.Kind.minus)
+        // Index: expr[expr]
+        if (tok.kind == Token.Kind.lbracket)
         {
-            advance();
-            auto operand = parseUnary();
-            return evalUnaryMinus(operand);
+            r.advance();
+            auto index = parseExpr(r, env, ctx, 0);
+            r.expect(Token.Kind.rbracket);
+            lhs = evalIndex(lhs, index);
+            continue;
         }
 
-        // Logical not
-        if (tok.kind == Token.Kind.bang)
+        // Binary operator
+        r.advance();
+
+        // Short-circuit: && and ||
+        if (tok.kind == Token.Kind.ampAmp)
         {
-            advance();
-            auto operand = parseUnary();
-            return evalUnaryNot(operand);
+            auto rhs = parseExpr(r, env, ctx, prec + 1);
+            if (isFalsy(lhs))
+                continue; // lhs stays false, absorbs RHS errors
+            lhs = rhs;
+            continue;
+        }
+        if (tok.kind == Token.Kind.pipePipe)
+        {
+            auto rhs = parseExpr(r, env, ctx, prec + 1);
+            if (isTruthy(lhs))
+                continue; // lhs stays true, absorbs RHS errors
+            lhs = rhs;
+            continue;
         }
 
-        return parseAtom();
+        auto rhs = parseExpr(r, env, ctx, prec + 1);
+        lhs = evalBinary(tok.kind, lhs, rhs);
     }
 
-    /// Parse an atomic expression (literals, identifiers, parens, lists, maps).
-    Value parseAtom()
+    return lhs;
+}
+
+/// Parse a unary expression (prefix operators and atoms).
+private Value parseUnary(ref TokenRange r, const Env env, Context ctx)
+{
+    auto tok = r.peek();
+
+    if (tok.kind == Token.Kind.minus)
     {
-        auto tok = peek();
+        r.advance();
+        auto operand = parseUnary(r, env, ctx);
+        return evalUnaryMinus(operand);
+    }
 
-        switch (tok.kind)
+    if (tok.kind == Token.Kind.bang)
+    {
+        r.advance();
+        auto operand = parseUnary(r, env, ctx);
+        return evalUnaryNot(operand);
+    }
+
+    return parseAtom(r, env, ctx);
+}
+
+/// Parse an atomic expression (literals, identifiers, parens, lists, maps).
+private Value parseAtom(ref TokenRange r, const Env env, Context ctx)
+{
+    auto tok = r.peek();
+
+    switch (tok.kind)
+    {
+    case Token.Kind.intLit:
+        r.advance();
+        return parseIntLit(tok);
+
+    case Token.Kind.uintLit:
+        r.advance();
+        return parseUintLit(tok);
+
+    case Token.Kind.floatLit:
+        r.advance();
+        return parseFloatLit(tok);
+
+    case Token.Kind.stringLit:
+        r.advance();
+        return Value(parseStringContent(tok.text));
+
+    case Token.Kind.bytesLit:
+        r.advance();
+        return Value(cast(immutable(ubyte)[]) parseStringContent(tok.text));
+
+    case Token.Kind.trueKw:
+        r.advance();
+        return Value(true);
+
+    case Token.Kind.falseKw:
+        r.advance();
+        return Value(false);
+
+    case Token.Kind.nullKw:
+        r.advance();
+        return Value.null_();
+
+    case Token.Kind.ident:
+        r.advance();
+        // Function call: ident(args...)
+        if (r.peek().kind == Token.Kind.lparen)
         {
-        case Token.Kind.intLit:
-            advance();
-            return parseIntLit(tok);
-
-        case Token.Kind.uintLit:
-            advance();
-            return parseUintLit(tok);
-
-        case Token.Kind.floatLit:
-            advance();
-            return parseFloatLit(tok);
-
-        case Token.Kind.stringLit:
-            advance();
-            return Value(parseStringContent(tok.text));
-
-        case Token.Kind.bytesLit:
-            advance();
-            return Value(cast(immutable(ubyte)[]) parseStringContent(tok.text));
-
-        case Token.Kind.trueKw:
-            advance();
-            return Value(true);
-
-        case Token.Kind.falseKw:
-            advance();
-            return Value(false);
-
-        case Token.Kind.nullKw:
-            advance();
-            return Value.null_();
-
-        case Token.Kind.ident:
-            advance();
-            // Function call: ident(args...)
-            if (peek().kind == Token.Kind.lparen)
+            r.advance(); // consume '('
+            // Check macros first
+            if (auto m = tok.text in env.macros)
             {
-                advance(); // consume '('
-                // Check macros first — they handle their own arg parsing
-                if (auto m = tok.text in macros)
-                {
-                    return (*m)(this);
-                }
-                // Regular function: parse args normally
-                auto args = parseArgList();
-                expect(Token.Kind.rparen);
-                return evalFunction(tok.text, args, tok.pos);
+                return (*m)(r, env, ctx);
             }
-            // Variable lookup
-            return ctx(tok.text);
-
-        case Token.Kind.lparen:
-            advance();
-            auto inner = parseExpr(0);
-            expect(Token.Kind.rparen);
-            return inner;
-
-        case Token.Kind.lbracket:
-            advance();
-            return parseList();
-
-        case Token.Kind.lbrace:
-            advance();
-            return parseMap();
-
-        default:
-            throw new EvalException("unexpected " ~ tok.toString(), tok.pos);
+            auto args = parseArgList(r, env, ctx);
+            r.expect(Token.Kind.rparen);
+            return evalFunction(tok.text, args, tok.pos);
         }
-    }
+        // Variable lookup
+        return ctx(tok.text);
 
-    /// Parse a ternary conditional (after consuming '?').
-    Value parseTernary(Value cond)
-    {
-        auto thenVal = parseExpr(0);
-        expect(Token.Kind.colon);
-        auto elseVal = parseExpr(0);
-        // Error in condition propagates
-        if (cond.type == Value.Type.err)
-            return cond;
-        return isTruthy(cond) ? thenVal : elseVal;
-    }
+    case Token.Kind.lparen:
+        r.advance();
+        auto inner = parseExpr(r, env, ctx, 0);
+        r.expect(Token.Kind.rparen);
+        return inner;
 
-    /// Parse a comma-separated argument list (without parens).
-    Value[] parseArgList()
-    {
-        Value[] args;
-        if (peek().kind == Token.Kind.rparen)
-            return args;
-        args ~= parseExpr(0);
-        while (match(Token.Kind.comma))
-            args ~= parseExpr(0);
+    case Token.Kind.lbracket:
+        r.advance();
+        return parseList(r, env, ctx);
+
+    case Token.Kind.lbrace:
+        r.advance();
+        return parseMap(r, env, ctx);
+
+    default:
+        throw new EvalException("unexpected " ~ tok.toString(), tok.pos);
+    }
+}
+
+/// Parse a ternary conditional (after consuming '?').
+private Value parseTernary(ref TokenRange r, const Env env, Context ctx, Value cond)
+{
+    auto thenVal = parseExpr(r, env, ctx, 0);
+    r.expect(Token.Kind.colon);
+    auto elseVal = parseExpr(r, env, ctx, 0);
+    if (cond.type == Value.Type.err)
+        return cond;
+    return isTruthy(cond) ? thenVal : elseVal;
+}
+
+/// Parse a comma-separated argument list (without consuming parens).
+private Value[] parseArgList(ref TokenRange r, const Env env, Context ctx)
+{
+    Value[] args;
+    if (r.peek().kind == Token.Kind.rparen)
         return args;
-    }
+    args ~= parseExpr(r, env, ctx, 0);
+    while (r.match(Token.Kind.comma))
+        args ~= parseExpr(r, env, ctx, 0);
+    return args;
+}
 
-    /// Parse a list literal [...].
-    Value parseList()
+/// Parse a list literal [...].
+private Value parseList(ref TokenRange r, const Env env, Context ctx)
+{
+    Value[] elems;
+    if (r.peek().kind == Token.Kind.rbracket)
     {
-        Value[] elems;
-        if (peek().kind == Token.Kind.rbracket)
-        {
-            advance();
-            return Value(elems);
-        }
-        elems ~= parseExpr(0);
-        while (match(Token.Kind.comma))
-        {
-            if (peek().kind == Token.Kind.rbracket)
-                break; // trailing comma
-            elems ~= parseExpr(0);
-        }
-        expect(Token.Kind.rbracket);
+        r.advance();
         return Value(elems);
     }
-
-    /// Parse a map literal {...}.
-    Value parseMap()
+    elems ~= parseExpr(r, env, ctx, 0);
+    while (r.match(Token.Kind.comma))
     {
-        Value[string] entries;
-        if (peek().kind == Token.Kind.rbrace)
-        {
-            advance();
-            return Value(entries);
-        }
+        if (r.peek().kind == Token.Kind.rbracket)
+            break;
+        elems ~= parseExpr(r, env, ctx, 0);
+    }
+    r.expect(Token.Kind.rbracket);
+    return Value(elems);
+}
 
-        parseMapEntry(entries);
-        while (match(Token.Kind.comma))
-        {
-            if (peek().kind == Token.Kind.rbrace)
-                break; // trailing comma
-            parseMapEntry(entries);
-        }
-        expect(Token.Kind.rbrace);
+/// Parse a map literal {...}.
+private Value parseMap(ref TokenRange r, const Env env, Context ctx)
+{
+    Value[string] entries;
+    if (r.peek().kind == Token.Kind.rbrace)
+    {
+        r.advance();
         return Value(entries);
     }
 
-    void parseMapEntry(ref Value[string] entries)
+    parseMapEntry(r, env, ctx, entries);
+    while (r.match(Token.Kind.comma))
     {
-        auto keyTok = peek();
-        auto keyVal = parseExpr(0);
-        expect(Token.Kind.colon);
-        auto valExpr = parseExpr(0);
-
-        // Extract string key — use match directly to avoid const issues
-        string keyStr = keyVal.inner.match!((ref string s) => s, (ref _) => null,);
-        if (keyStr is null)
-            throw new EvalException("map keys must be strings", keyTok.pos);
-        entries[keyStr] = valExpr;
+        if (r.peek().kind == Token.Kind.rbrace)
+            break;
+        parseMapEntry(r, env, ctx, entries);
     }
+    r.expect(Token.Kind.rbrace);
+    return Value(entries);
+}
+
+private void parseMapEntry(ref TokenRange r, const Env env, Context ctx, ref Value[string] entries)
+{
+    auto keyTok = r.peek();
+    auto keyVal = parseExpr(r, env, ctx, 0);
+    r.expect(Token.Kind.colon);
+    auto valExpr = parseExpr(r, env, ctx, 0);
+
+    string keyStr = keyVal.inner.match!((ref string s) => s, (ref _) => null,);
+    if (keyStr is null)
+        throw new EvalException("map keys must be strings", keyTok.pos);
+    entries[keyStr] = valExpr;
 }
 
 // ── Operator precedence ─────────────────────────────────────────────
 
-/// Returns the precedence for an infix operator, or -1 if not infix.
 private int infixPrec(Token.Kind kind)
 {
     switch (kind)
     {
     case Token.Kind.question:
-        return 1; // ternary
+        return 1;
     case Token.Kind.pipePipe:
         return 2;
     case Token.Kind.ampAmp:
@@ -433,7 +367,7 @@ private int infixPrec(Token.Kind kind)
         return 7;
     case Token.Kind.dot:
     case Token.Kind.lbracket:
-        return 8; // member access, indexing
+        return 8;
     default:
         return -1;
     }
@@ -441,7 +375,6 @@ private int infixPrec(Token.Kind kind)
 
 // ── Evaluation helpers ──────────────────────────────────────────────
 
-/// Check if a Value is an error, propagating it if so.
 private bool isErr(Value v)
 {
     return v.type == Value.Type.err;
@@ -449,7 +382,6 @@ private bool isErr(Value v)
 
 private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
 {
-    // Propagate errors
     if (isErr(lhs))
         return lhs;
     if (isErr(rhs))
@@ -531,7 +463,7 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
         }
     }
 
-    // Arithmetic: double × double (or mixed int/double promotion)
+    // Arithmetic: double × double (or mixed promotion)
     auto ld = toDouble(lhs);
     auto rd = toDouble(rhs);
     if (!ld.isNull && !rd.isNull)
@@ -653,7 +585,6 @@ private Value evalIn(Value lhs, Value rhs)
     if (isErr(rhs))
         return rhs;
 
-    // String contains
     auto ls = tryGet!string(lhs);
     auto rs = tryGet!string(rhs);
     if (!ls.isNull && !rs.isNull)
@@ -663,7 +594,6 @@ private Value evalIn(Value lhs, Value rhs)
         return Value(rs.get.canFind(ls.get));
     }
 
-    // List membership (deep equality)
     auto rl = tryGet!(Value[])(rhs);
     if (!rl.isNull)
     {
@@ -673,7 +603,6 @@ private Value evalIn(Value lhs, Value rhs)
         return Value(false);
     }
 
-    // Map key membership
     auto rm = tryGet!(Value[string])(rhs);
     if (!rm.isNull && !ls.isNull)
     {
@@ -688,7 +617,6 @@ private Value evalMember(Value obj, string name)
     if (isErr(obj))
         return obj;
 
-    // Map field access
     const m = tryGet!(Value[string])(obj);
     if (!m.isNull)
     {
@@ -696,7 +624,6 @@ private Value evalMember(Value obj, string name)
             return *p;
         return Value.err("no such key: " ~ name);
     }
-    // Entry (lazy) field access
     auto e = tryGet!Entry(obj);
     if (!e.isNull)
         return e.get.resolve(name);
@@ -710,7 +637,6 @@ private Value evalIndex(Value obj, Value index)
     if (isErr(index))
         return index;
 
-    // List indexing
     auto listVal = tryGet!(Value[])(obj);
     auto idxVal = tryGet!long(index);
     if (!listVal.isNull && !idxVal.isNull)
@@ -724,7 +650,6 @@ private Value evalIndex(Value obj, Value index)
         return list[cast(size_t) idx];
     }
 
-    // Map indexing
     const im = tryGet!(Value[string])(obj);
     auto ik = tryGet!string(index);
     if (!im.isNull && !ik.isNull)
@@ -739,7 +664,6 @@ private Value evalIndex(Value obj, Value index)
 
 private Value evalFunction(string name, Value[] args, size_t pos)
 {
-    // Built-in functions
     switch (name)
     {
     case "size":
@@ -797,7 +721,6 @@ private Value evalMethod(Value obj, string name, Value[] args)
             return Value.err(".endsWith() takes exactly 1 argument");
         return evalEndsWith(obj, args[0]);
     case "matches":
-        // TODO: regex matching
         return Value.err(".matches() is not yet implemented");
     default:
         return Value.err("unknown method: " ~ name);
@@ -967,22 +890,25 @@ private Value evalStringCast(Value v)
 // ── Macros ──────────────────────────────────────────────────────────
 
 /// Built-in macros that ship with every evaluator.
-private Macro[string] builtinMacros()
+Macro[string] builtinMacros()
 {
     Macro[string] m;
-    m["has"] = (ref Parser p) => macroHas(p);
+    m["has"] = (ref TokenRange r, const Env env, Context ctx) => macroHas(r, env, ctx);
     return m;
 }
 
 /// Built-in method macros for comprehensions.
-private MethodMacro[string] builtinMethodMacros()
+MethodMacro[string] builtinMethodMacros()
 {
     MethodMacro[string] m;
-    m["all"] = (Value target, ref Parser p) => macroAll(target, p);
-    m["exists"] = (Value target, ref Parser p) => macroExists(target, p);
-    m["exists_one"] = (Value target, ref Parser p) => macroExistsOne(target, p);
-    m["map"] = (Value target, ref Parser p) => macroMap(target, p);
-    m["filter"] = (Value target, ref Parser p) => macroFilter(target, p);
+    m["all"] = (Value t, ref TokenRange r, const Env env, Context ctx) => macroAll(t, r, env, ctx);
+    m["exists"] = (Value t, ref TokenRange r, const Env env, Context ctx) => macroExists(t,
+            r, env, ctx);
+    m["exists_one"] = (Value t, ref TokenRange r, const Env env, Context ctx) => macroExistsOne(t,
+            r, env, ctx);
+    m["map"] = (Value t, ref TokenRange r, const Env env, Context ctx) => macroMap(t, r, env, ctx);
+    m["filter"] = (Value t, ref TokenRange r, const Env env, Context ctx) => macroFilter(t,
+            r, env, ctx);
     return m;
 }
 
@@ -993,75 +919,70 @@ private struct ComprehensionArgs
     string binder;
     /// Token position where the body expression starts.
     size_t bodyStart;
-    /// Token position after the body expression (established by null parse).
+    /// Token position after the body expression.
     size_t bodyEnd;
 }
 
-/// Parse a comprehension's arguments: binder, comma, body expression.
-/// The opening '(' has already been consumed; this consumes through ')'.
-/// Creates a sub-parser with binder=null to establish the expected end
-/// position. The main parser is advanced to match.
-private ComprehensionArgs parseComprehensionArgs(ref Parser parser)
+/// Parse comprehension arguments: binder, comma, body expression.
+/// Uses a probe sub-range with binder=null to find where the body ends.
+private ComprehensionArgs parseComprehensionArgs(ref TokenRange r, const Env env, Context ctx)
 {
     ComprehensionArgs args;
-    auto binderTok = parser.expect(Token.Kind.ident);
+    auto binderTok = r.expect(Token.Kind.ident);
     args.binder = binderTok.text;
-    parser.expect(Token.Kind.comma);
-    args.bodyStart = parser.pos;
-    // Parse once with a sub-parser (binder→null) to find where the body ends.
-    auto nullCtx = bindContext(parser.ctx, args.binder, Value.null_());
-    auto probe = Parser(parser.tokens, nullCtx, parser.macros);
-    probe.pos = args.bodyStart;
-    probe.parseExpr(0);
+    r.expect(Token.Kind.comma);
+    args.bodyStart = r.pos;
+    // Probe: parse body with null binder to find extent
+    auto probe = r.save();
+    auto nullCtx = bindContext(ctx, args.binder, Value.null_());
+    parseExpr(probe, env, nullCtx, 0);
     args.bodyEnd = probe.pos;
-    // Advance the main parser to match
-    parser.pos = args.bodyEnd;
-    parser.expect(Token.Kind.rparen);
+    // Advance main range to match
+    r.pos = args.bodyEnd;
+    r.expect(Token.Kind.rparen);
     return args;
 }
 
-/// Re-evaluate the body expression with a binder variable bound to element.
-/// Creates a sub-parser starting at bodyStart and asserts it lands at bodyEnd.
-private Value evalBody(ref Parser parser, ComprehensionArgs args, Value element)
+/// Evaluate a comprehension body with a binder bound to element.
+/// Creates a sub-range, parses, and asserts it lands at the expected end.
+private Value evalBody(ref TokenRange r, const Env env, Context ctx,
+        ComprehensionArgs args, Value element)
 {
-    auto innerCtx = bindContext(parser.ctx, args.binder, element);
-    auto sub = Parser(parser.tokens, innerCtx, parser.macros);
+    auto sub = r.save();
     sub.pos = args.bodyStart;
-    auto result = sub.parseExpr(0);
+    auto innerCtx = bindContext(ctx, args.binder, element);
+    auto result = parseExpr(sub, env, innerCtx, 0);
     assert(sub.pos == args.bodyEnd, "comprehension body consumed different tokens on replay");
     return result;
 }
 
-/// Layer a single binding on top of an existing context.
-private Context bindContext(Context outer, string name, Value val)
+/// `has(expr)` — true if expr doesn't produce an error.
+private Value macroHas(ref TokenRange r, const Env env, Context ctx)
 {
-    return (string n) {
-        if (n == name)
-            return val;
-        return outer(n);
-    };
+    auto arg = parseExpr(r, env, ctx, 0);
+    r.expect(Token.Kind.rparen);
+    return Value(arg.type != Value.Type.err);
 }
 
-/// `list.all(x, x > 0)` — true if body is true for all elements.
-private Value macroAll(Value target, ref Parser parser)
+/// `list.all(x, body)` — true if body is true for all elements.
+private Value macroAll(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
-        // Still need to parse through the arguments
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return target;
     }
     auto list = tryGet!(Value[])(target);
     if (list.isNull)
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return Value.err(".all() requires a list");
     }
 
-    auto args = parseComprehensionArgs(parser);
+    auto args = parseComprehensionArgs(r, env, ctx);
     foreach (ref elem; list.get)
     {
-        auto result = evalBody(parser, args, elem);
+        auto result = evalBody(r, env, ctx, args, elem);
         if (isErr(result))
             return result;
         if (isFalsy(result))
@@ -1070,25 +991,25 @@ private Value macroAll(Value target, ref Parser parser)
     return Value(true);
 }
 
-/// `list.exists(x, x > 0)` — true if body is true for at least one element.
-private Value macroExists(Value target, ref Parser parser)
+/// `list.exists(x, body)` — true if body is true for at least one element.
+private Value macroExists(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return target;
     }
     auto list = tryGet!(Value[])(target);
     if (list.isNull)
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return Value.err(".exists() requires a list");
     }
 
-    auto args = parseComprehensionArgs(parser);
+    auto args = parseComprehensionArgs(r, env, ctx);
     foreach (ref elem; list.get)
     {
-        auto result = evalBody(parser, args, elem);
+        auto result = evalBody(r, env, ctx, args, elem);
         if (isErr(result))
             return result;
         if (isTruthy(result))
@@ -1097,56 +1018,56 @@ private Value macroExists(Value target, ref Parser parser)
     return Value(false);
 }
 
-/// `list.exists_one(x, x > 0)` — true if body is true for exactly one element.
-private Value macroExistsOne(Value target, ref Parser parser)
+/// `list.exists_one(x, body)` — true if body is true for exactly one element.
+private Value macroExistsOne(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return target;
     }
     auto list = tryGet!(Value[])(target);
     if (list.isNull)
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return Value.err(".exists_one() requires a list");
     }
 
-    auto args = parseComprehensionArgs(parser);
+    auto args = parseComprehensionArgs(r, env, ctx);
     int count = 0;
     foreach (ref elem; list.get)
     {
-        auto result = evalBody(parser, args, elem);
+        auto result = evalBody(r, env, ctx, args, elem);
         if (isErr(result))
             return result;
         if (isTruthy(result))
             count++;
         if (count > 1)
-            return Value(false); // early exit: more than one
+            return Value(false);
     }
     return Value(count == 1);
 }
 
-/// `list.map(x, x * 2)` — transform each element.
-private Value macroMap(Value target, ref Parser parser)
+/// `list.map(x, body)` — transform each element.
+private Value macroMap(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return target;
     }
     auto list = tryGet!(Value[])(target);
     if (list.isNull)
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return Value.err(".map() requires a list");
     }
 
-    auto args = parseComprehensionArgs(parser);
+    auto args = parseComprehensionArgs(r, env, ctx);
     Value[] result;
     foreach (ref elem; list.get)
     {
-        auto mapped = evalBody(parser, args, elem);
+        auto mapped = evalBody(r, env, ctx, args, elem);
         if (isErr(mapped))
             return mapped;
         result ~= mapped;
@@ -1154,52 +1075,32 @@ private Value macroMap(Value target, ref Parser parser)
     return Value(result);
 }
 
-/// `list.filter(x, x > 0)` — keep elements where body is true.
-private Value macroFilter(Value target, ref Parser parser)
+/// `list.filter(x, body)` — keep elements where body is true.
+private Value macroFilter(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return target;
     }
     auto list = tryGet!(Value[])(target);
     if (list.isNull)
     {
-        cast(void) parseComprehensionArgs(parser);
+        cast(void) parseComprehensionArgs(r, env, ctx);
         return Value.err(".filter() requires a list");
     }
 
-    auto args = parseComprehensionArgs(parser);
+    auto args = parseComprehensionArgs(r, env, ctx);
     Value[] result;
     foreach (ref elem; list.get)
     {
-        auto pred = evalBody(parser, args, elem);
+        auto pred = evalBody(r, env, ctx, args, elem);
         if (isErr(pred))
             return pred;
         if (isTruthy(pred))
             result ~= elem;
     }
     return Value(result);
-}
-
-/// Merge two macro tables, with user macros overriding builtins.
-private Macro[string] merge(Macro[string] base, Macro[string] overrides)
-{
-    foreach (k, v; overrides)
-        base[k] = v;
-    return base;
-}
-
-/// `has(x.y)` — test whether field/key `y` exists on `x`.
-/// Parses the argument as a member expression; returns true if it resolves
-/// without producing an error, false if the member doesn't exist.
-private Value macroHas(ref Parser parser)
-{
-    // Parse the argument expression normally — errors become Value.err
-    auto arg = parser.parseExpr(0);
-    parser.expect(Token.Kind.rparen);
-    // has() returns true if arg is not an error, false if it is
-    return Value(arg.type != Value.Type.err);
 }
 
 // ── Literal parsing helpers ─────────────────────────────────────────
@@ -1245,10 +1146,8 @@ private Value parseFloatLit(Token tok)
     }
 }
 
-/// Parse the content of a string literal (strip quotes, process escapes).
 private string parseStringContent(string raw)
 {
-    // Determine prefix length (b, r, br, etc.)
     size_t prefixLen = 0;
     bool isRaw = false;
     foreach (idx, c; raw)
@@ -1265,7 +1164,6 @@ private string parseStringContent(string raw)
     auto rest = raw[prefixLen .. $];
     const char quote = rest[0];
 
-    // Triple-quoted?
     const bool triple = rest.length >= 6 && rest[1] == quote && rest[2] == quote;
     auto content = triple ? rest[3 .. $ - 3] : rest[1 .. $ - 1];
 
@@ -1319,7 +1217,6 @@ private string processEscapes(string s)
                 result ~= '\v';
                 break;
             default:
-                // Unknown escape: keep as-is
                 result ~= s[i .. i + 2];
                 break;
             }
@@ -1343,7 +1240,6 @@ private Nullable!T tryGet(T)(Value v)
     return v.inner.match!((ref T val) => nullable(val), (ref _) => Nullable!T.init,);
 }
 
-/// Try to promote a numeric Value to double.
 private Nullable!double toDouble(Value v)
 {
     return v.inner.match!((ref double d) => nullable(d),
@@ -1353,8 +1249,7 @@ private Nullable!double toDouble(Value v)
 
 private bool isTruthy(Value v)
 {
-    return v.inner.match!((ref bool b) => b, (ref _) => true, // non-bool values are truthy in CEL
-            );
+    return v.inner.match!((ref bool b) => b, (ref _) => true,);
 }
 
 private bool isFalsy(Value v)
@@ -1391,7 +1286,8 @@ private string typeName(Value v)
     }
 }
 
-private string kindName(Token.Kind kind)
+/// Human-readable name for a token kind.
+string kindName(Token.Kind kind)
 {
     import std.conv : to;
 
@@ -1552,7 +1448,6 @@ unittest
 {
     import dshould;
 
-    // Division by zero is now an error value, not an exception
     evaluate("1 / 0", emptyContext()).type.should.be(Value.Type.err);
 }
 
@@ -1570,7 +1465,6 @@ unittest
 {
     import dshould;
 
-    // emptyContext returns err values, which are still Values (not exceptions)
     auto result = evaluate("x", emptyContext());
     result.type.should.be(Value.Type.err);
 }
@@ -1592,9 +1486,7 @@ unittest
 {
     import dshould;
 
-    // false && (error) should produce false, not propagate error
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
-    // true || (error) should produce true, not propagate error
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
 }
 
@@ -1628,11 +1520,10 @@ unittest
 {
     import dshould;
 
-    // Custom macro: always(expr) evaluates expr but always returns true
     Macro[string] customs;
-    customs["always"] = delegate Value(ref Parser p) {
-        p.parseExpr(0); // evaluate and discard
-        p.expect(Token.Kind.rparen);
+    customs["always"] = delegate Value(ref TokenRange r, const Env env, Context ctx) {
+        parseExpr(r, env, ctx, 0); // evaluate and discard
+        r.expect(Token.Kind.rparen);
         return Value(true);
     };
     evaluateWithMacros(`always(1 + 2)`, emptyContext(), customs).should.be(value(true));
@@ -1645,7 +1536,7 @@ unittest
 
     evaluate("[1, 2, 3].all(x, x > 0)", emptyContext()).should.be(value(true));
     evaluate("[1, 2, 3].all(x, x > 2)", emptyContext()).should.be(value(false));
-    evaluate("[].all(x, x > 0)", emptyContext()).should.be(value(true)); // vacuous truth
+    evaluate("[].all(x, x > 0)", emptyContext()).should.be(value(true));
 }
 
 @("Eval: list.exists() comprehension")
@@ -1664,7 +1555,7 @@ unittest
     import dshould;
 
     evaluate("[1, 2, 3].exists_one(x, x == 2)", emptyContext()).should.be(value(true));
-    evaluate("[1, 2, 3].exists_one(x, x > 1)", emptyContext()).should.be(value(false)); // 2 and 3
+    evaluate("[1, 2, 3].exists_one(x, x > 1)", emptyContext()).should.be(value(false));
     evaluate("[1, 2, 3].exists_one(x, x > 5)", emptyContext()).should.be(value(false));
 }
 
@@ -1708,7 +1599,6 @@ unittest
 {
     import dshould;
 
-    // map then filter
     evaluate("[1, 2, 3, 4].map(x, x * 2).filter(y, y > 4)", emptyContext()).should.be(
             value([value(6L), value(8L)]));
 }
@@ -1718,13 +1608,10 @@ unittest
 {
     import dshould;
 
-    // Errors propagate through operators
     evaluate("1/0 + 1", emptyContext()).type.should.be(Value.Type.err);
     evaluate("-(1/0)", emptyContext()).type.should.be(Value.Type.err);
-    // But short-circuit absorbs errors
     evaluate("true || (1/0 == 1)", emptyContext()).should.be(value(true));
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
-    // Non-short-circuit propagates
     evaluate("true && (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
     evaluate("false || (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
 }

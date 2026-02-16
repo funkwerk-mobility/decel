@@ -80,7 +80,6 @@ struct Value
     /// Returns the type tag for this value.
     Type type()
     {
-        // Use explicit ref handlers to avoid SumType matching ambiguities.
         return inner.match!((ref typeof(null) _) => Type.null_,
                 (ref bool _) => Type.bool_, (ref long _) => Type.int_,
                 (ref ulong _) => Type.uint_, (ref double _) => Type.double_,
@@ -98,8 +97,6 @@ struct Value
     /// Hash support (needed when opEquals is defined).
     size_t toHash() const nothrow @trusted
     {
-        // Simple hash — just use type tag. Not ideal for hash tables,
-        // but correct and sufficient for now.
         try
         {
             auto self = cast(Value) this;
@@ -115,14 +112,12 @@ struct Value
 /// Deep equality comparison of two Values.
 private bool valueEquals(const Value a, const Value b)
 {
-    // We cast away const to use SumType.match (which requires mutable ref).
     auto ma = cast(Value) a;
     auto mb = cast(Value) b;
 
     auto ta = ma.type();
     auto tb = mb.type();
 
-    // Different types are never equal (except cross-numeric, handled below)
     if (ta == Value.Type.err || tb == Value.Type.err)
         return false;
 
@@ -226,7 +221,6 @@ unittest
 {
     import dshould;
 
-    // Primitives
     (value(42L) == value(42L)).should.be(true);
     (value(42L) == value(43L)).should.be(false);
     (value(true) == value(true)).should.be(true);
@@ -235,10 +229,8 @@ unittest
     (value("abc") == value("def")).should.be(false);
     (Value.null_() == Value.null_()).should.be(true);
 
-    // Lists
     (value([value(1L), value(2L)]) == value([value(1L), value(2L)])).should.be(true);
     (value([value(1L), value(2L)]) == value([value(1L), value(3L)])).should.be(false);
 
-    // Error values are never equal
     (Value.err("a") == Value.err("a")).should.be(false);
 }

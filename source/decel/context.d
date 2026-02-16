@@ -25,6 +25,16 @@ Context emptyContext()
     return (string) => Value.err("undefined");
 }
 
+/// Layer a single binding on top of an existing context.
+Context bindContext(Context outer, string name, Value val)
+{
+    return (string n) {
+        if (n == name)
+            return val;
+        return outer(n);
+    };
+}
+
 @("Context: resolve bindings")
 unittest
 {

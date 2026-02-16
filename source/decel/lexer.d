@@ -84,14 +84,12 @@ Token[] tokenize(string source)
 
     while (i < source.length)
     {
-        // Skip whitespace
         if (source[i] == ' ' || source[i] == '\t' || source[i] == '\n' || source[i] == '\r')
         {
             i++;
             continue;
         }
 
-        // Single-line comments: //
         if (i + 1 < source.length && source[i] == '/' && source[i + 1] == '/')
         {
             while (i < source.length && source[i] != '\n')
@@ -101,14 +99,12 @@ Token[] tokenize(string source)
 
         auto start = i;
 
-        // Identifiers, keywords, and bool/null literals
         if (isIdentStart(source[i]))
         {
             while (i < source.length && isIdentCont(source[i]))
                 i++;
             auto word = source[start .. i];
 
-            // Check for bytes literal prefix
             if ((word == "b" || word == "B" || word == "r" || word == "R"
                     || word == "br" || word == "bR" || word == "Br" || word == "BR"
                     || word == "rb" || word == "rB" || word == "Rb" || word == "RB")
@@ -135,7 +131,6 @@ Token[] tokenize(string source)
             continue;
         }
 
-        // Numeric literals
         if (isDigit(source[i]) || (source[i] == '.' && i + 1 < source.length
                 && isDigit(source[i + 1])))
         {
@@ -143,7 +138,6 @@ Token[] tokenize(string source)
             continue;
         }
 
-        // String literals
         if (source[i] == '"' || source[i] == '\'')
         {
             auto tok = lexString(source, i, start, false);
@@ -152,7 +146,6 @@ Token[] tokenize(string source)
             continue;
         }
 
-        // Two-character operators
         if (i + 1 < source.length)
         {
             auto two = source[i .. i + 2];
@@ -190,7 +183,6 @@ Token[] tokenize(string source)
             }
         }
 
-        // Single-character operators and punctuation
         Token.Kind singleKind;
         bool foundSingle = true;
         switch (source[i])
@@ -260,7 +252,6 @@ Token[] tokenize(string source)
             continue;
         }
 
-        // Unknown character
         tokens ~= Token(Token.Kind.err, source[i .. i + 1], start);
         i++;
     }
@@ -268,8 +259,6 @@ Token[] tokenize(string source)
     tokens ~= Token(Token.Kind.eof, "", source.length);
     return tokens;
 }
-
-// ── Internal helpers ────────────────────────────────────────────────
 
 private bool isIdentStart(char c)
 {
@@ -308,12 +297,10 @@ private Token.Kind identKind(string word)
     }
 }
 
-/// Lex a numeric literal (int, uint, or float).
 private Token lexNumber(string source, ref size_t i, size_t start)
 {
     bool isFloat = false;
 
-    // Hex literal
     if (i + 1 < source.length && source[i] == '0' && (source[i + 1] == 'x' || source[i + 1] == 'X'))
     {
         i += 2;
@@ -321,7 +308,6 @@ private Token lexNumber(string source, ref size_t i, size_t start)
             return Token(Token.Kind.err, source[start .. i], start);
         while (i < source.length && isHexDigit(source[i]))
             i++;
-        // Check for uint suffix
         if (i < source.length && (source[i] == 'u' || source[i] == 'U'))
         {
             i++;
@@ -330,11 +316,9 @@ private Token lexNumber(string source, ref size_t i, size_t start)
         return Token(Token.Kind.intLit, source[start .. i], start);
     }
 
-    // Decimal / float
     while (i < source.length && isDigit(source[i]))
         i++;
 
-    // Fractional part
     if (i < source.length && source[i] == '.' && (i + 1 >= source.length || source[i + 1] != '.'))
     {
         isFloat = true;
@@ -343,7 +327,6 @@ private Token lexNumber(string source, ref size_t i, size_t start)
             i++;
     }
 
-    // Exponent part
     if (i < source.length && (source[i] == 'e' || source[i] == 'E'))
     {
         isFloat = true;
@@ -359,7 +342,6 @@ private Token lexNumber(string source, ref size_t i, size_t start)
     if (isFloat)
         return Token(Token.Kind.floatLit, source[start .. i], start);
 
-    // Check for uint suffix
     if (i < source.length && (source[i] == 'u' || source[i] == 'U'))
     {
         i++;
@@ -369,13 +351,11 @@ private Token lexNumber(string source, ref size_t i, size_t start)
     return Token(Token.Kind.intLit, source[start .. i], start);
 }
 
-/// Lex a string or bytes literal (single or double quoted, with triple-quote support).
 private Token lexString(string source, ref size_t i, size_t start, bool isRaw)
 {
     const quote = source[i];
     bool triple = false;
 
-    // Check for triple-quoted string
     if (i + 2 < source.length && source[i + 1] == quote && source[i + 2] == quote)
     {
         triple = true;
@@ -390,7 +370,7 @@ private Token lexString(string source, ref size_t i, size_t start, bool isRaw)
     {
         if (source[i] == '\\' && !isRaw)
         {
-            i += 2; // skip escape sequence
+            i += 2;
             continue;
         }
         if (source[i] == quote)
@@ -411,7 +391,6 @@ private Token lexString(string source, ref size_t i, size_t start, bool isRaw)
                 return Token(Token.Kind.stringLit, source[start .. i], start);
             }
         }
-        // Non-triple strings can't span lines
         if (!triple && (source[i] == '\n' || source[i] == '\r'))
         {
             return Token(Token.Kind.err, source[start .. i], start);
@@ -419,11 +398,8 @@ private Token lexString(string source, ref size_t i, size_t start, bool isRaw)
         i++;
     }
 
-    // Unterminated string
     return Token(Token.Kind.err, source[start .. i], start);
 }
-
-// ── Tests ───────────────────────────────────────────────────────────
 
 @("Lexer: simple arithmetic")
 unittest
