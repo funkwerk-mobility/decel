@@ -349,9 +349,6 @@ each Entry subclass define custom syntax without registering global macros:
 ```d
 class MetricEntry : Entry
 {
-    string name;
-    double[] values;
-
     override Value resolve(string field) { /* ... */ }
     override List asList() { /* ... */ }
 
@@ -376,6 +373,63 @@ metric.where(threshold > 50).all(x, x.healthy)
 
 The evaluator checks Entry-level macros after global method macros but
 before built-in methods. Return `Nullable!Value.init` to fall through.
+
+### Entry Continuation Parsing — `evalContinuation()`
+
+Override `evalContinuation()` to parse arbitrary syntax immediately after
+an expression resolves to your Entry — before the evaluator checks for
+`.`, `[`, or any binary operator. This is the hook for custom postfix
+syntax like Prometheus-style `{attribute == "value"}` filters:
+
+```d
+class MetricEntry : Entry
+{
+    // ... resolve(), asList(), etc.
+
+    override Nullable!Value evalContinuation(Value self,
+            ref TokenRange r, const Env env, Context ctx)
+    {
+        if (r.peek().kind != Token.Kind.lbrace)
+            return Nullable!Value.init;  // not our syntax, fall through
+
+        r.advance(); // consume '{'
+
+        // Parse key == "value" filter pairs
+        string[string] filters;
+        if (r.peek().kind != Token.Kind.rbrace)
+        {
+            auto key = r.expect(Token.Kind.ident);
+            r.expect(Token.Kind.eqEq);
+            auto val = parseExpr(r, env, ctx, 0);
+            filters[key.text] = val.get!string;
+
+            while (r.match(Token.Kind.comma))
+            {
+                key = r.expect(Token.Kind.ident);
+                r.expect(Token.Kind.eqEq);
+                val = parseExpr(r, env, ctx, 0);
+                filters[key.text] = val.get!string;
+            }
+        }
+        r.expect(Token.Kind.rbrace);
+
+        // Return filtered metric
+        return nullable(Value(cast(Entry) filterSeries(filters)));
+    }
+}
+```
+
+Then in CEL — exactly Prometheus syntax:
+```cel
+http_requests_total{method == "GET", status == "200"}[0].value
+http_requests_total{method == "GET"}.all(s, s.value > 100)
+http_requests_total{}.count
+```
+
+The continuation fires at the highest precedence (same level as `.` and
+`[]`), so `metric{...}.field` and `metric{...}[0]` chain naturally.
+Return `Nullable!Value.init` to fall through to normal parsing. The
+result can itself be an Entry, so continuations can chain.
 
 ### Combining Entry and List
 

@@ -77,6 +77,19 @@ Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
 
     while (true)
     {
+        // Entry continuation: let the entry parse arbitrary syntax
+        // (e.g. {attr == "val"}) before we check infix operators.
+        auto entryC = tryGet!Entry(lhs);
+        if (!entryC.isNull)
+        {
+            auto cont = entryC.get.evalContinuation(lhs, r, env, ctx);
+            if (!cont.isNull)
+            {
+                lhs = cont.get;
+                continue; // re-enter loop — the new lhs might also be an Entry
+            }
+        }
+
         auto tok = r.peek();
         auto prec = infixPrec(tok.kind);
         if (prec < 0 || prec < minPrec)
@@ -2706,6 +2719,161 @@ unittest
 
     // Field access still works
     evaluate(`obj.val`, ctx).should.be(value("hello"));
+}
+
+@("Eval: Entry.evalContinuation() — Prometheus {attr} filter syntax")
+unittest
+{
+    import dshould;
+
+    struct TimeSeries
+    {
+        string[string] labels;
+        long val;
+    }
+
+    class MetricEntry : Entry
+    {
+        string metricName;
+        TimeSeries[] series;
+
+        this(string name, TimeSeries[] data)
+        {
+            metricName = name;
+            series = data;
+        }
+
+        override Value resolve(string name)
+        {
+            if (name == "name")
+                return value(metricName);
+            if (name == "count")
+                return value(cast(long) series.length);
+            return Value.err("no such field: " ~ name);
+        }
+
+        override List asList()
+        {
+            Value[] elems;
+            foreach (ref s; series)
+            {
+                Value[string] m;
+                foreach (k, v; s.labels)
+                    m[k] = value(v);
+                m["value"] = value(s.val);
+                elems ~= Value(m);
+            }
+            return new ArrayList(elems);
+        }
+
+        /// Parse {key == "val", ...} continuation syntax.
+        override Nullable!Value evalContinuation(Value self, ref TokenRange r,
+                const Env env, Context ctx)
+        {
+            if (r.peek().kind != Token.Kind.lbrace)
+                return Nullable!Value.init;
+
+            r.advance(); // consume '{'
+
+            // Parse key == expr pairs
+            string[string] filters;
+            if (r.peek().kind != Token.Kind.rbrace)
+            {
+                auto keyTok = r.expect(Token.Kind.ident);
+                r.expect(Token.Kind.eqEq);
+                auto val = parseExpr(r, env, ctx, 0);
+                filters[keyTok.text] = val.get!string;
+
+                while (r.match(Token.Kind.comma))
+                {
+                    keyTok = r.expect(Token.Kind.ident);
+                    r.expect(Token.Kind.eqEq);
+                    val = parseExpr(r, env, ctx, 0);
+                    filters[keyTok.text] = val.get!string;
+                }
+            }
+            r.expect(Token.Kind.rbrace);
+
+            // Filter series
+            TimeSeries[] matched;
+            foreach (ref s; series)
+            {
+                bool pass = true;
+                foreach (k, v; filters)
+                {
+                    auto p = k in s.labels;
+                    if (p is null || *p != v)
+                    {
+                        pass = false;
+                        break;
+                    }
+                }
+                if (pass)
+                    matched ~= s;
+            }
+            return nullable(Value(cast(Entry) new MetricEntry(metricName, matched)));
+        }
+    }
+
+    auto metric = new MetricEntry("http_requests", [
+        TimeSeries(["method": "GET", "status": "200"], 1500),
+        TimeSeries(["method": "GET", "status": "404"], 35),
+        TimeSeries(["method": "POST", "status": "200"], 800),
+        TimeSeries(["method": "POST", "status": "500"], 12),
+    ]);
+
+    auto ctx = contextFrom(["http_requests": Value(cast(Entry) metric)]);
+
+    // Basic attribute filter
+    evaluate(`http_requests{method == "GET"}.count`, ctx).should.be(value(2L));
+    evaluate(`http_requests{method == "POST"}.count`, ctx).should.be(value(2L));
+    evaluate(`http_requests{method == "GET", status == "200"}.count`, ctx).should.be(value(1L));
+
+    // Empty filter returns all
+    evaluate(`http_requests{}.count`, ctx).should.be(value(4L));
+
+    // Chained with comprehensions via asList()
+    evaluate(`http_requests{method == "GET"}.all(x, x.value > 0)`, ctx).should.be(value(true));
+    evaluate(`http_requests{method == "GET"}.exists(x, x.status == "404")`, ctx).should.be(
+            value(true));
+
+    // Filter then index
+    evaluate(`http_requests{method == "GET", status == "200"}[0].value`, ctx).should.be(
+            value(1500L));
+
+    // Filter with variable
+    auto ctx2 = contextFrom([
+        "metric": Value(cast(Entry) metric),
+        "target": value("POST"),
+    ]);
+    evaluate(`metric{method == target}.count`, ctx2).should.be(value(2L));
+
+    // Field access still works without filter
+    evaluate(`http_requests.name`, ctx).should.be(value("http_requests"));
+    evaluate(`size(http_requests)`, ctx).should.be(value(4L));
+}
+
+@("Eval: Entry.evalContinuation() — non-matching falls through")
+unittest
+{
+    import dshould;
+
+    // An Entry that doesn't define evalContinuation — normal behavior
+    class PlainEntry : Entry
+    {
+        override Value resolve(string name)
+        {
+            if (name == "x")
+                return value(42L);
+            return Value.err("no such field: " ~ name);
+        }
+    }
+
+    auto ctx = contextFrom(["obj": Value(cast(Entry) new PlainEntry())]);
+
+    // Normal member access still works
+    evaluate(`obj.x`, ctx).should.be(value(42L));
+    evaluate(`obj.x + 1`, ctx).should.be(value(43L));
 }
 
 @("Eval: Entry with both asList() and asValue()")

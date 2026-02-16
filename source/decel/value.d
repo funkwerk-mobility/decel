@@ -45,6 +45,16 @@ abstract class Entry
     {
         return Nullable!Value.init;
     }
+
+    /// Called after an expression resolves to this Entry, before the
+    /// evaluator checks for `.`, `[`, or binary operators. Peek at the
+    /// upcoming tokens and parse a continuation if desired (e.g. `{...}`
+    /// attribute filters). Return `Nullable!Value.init` to fall through
+    /// to normal infix/postfix dispatch.
+    Nullable!Value evalContinuation(Value, ref TokenRange, const Env, Context)
+    {
+        return Nullable!Value.init;
+    }
 }
 
 /// Abstract list — supports indexing and size without materializing.
