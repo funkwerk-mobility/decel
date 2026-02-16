@@ -1,6 +1,6 @@
 name "decel"
 description "A Google Common Expression Language (CEL) implementation for D"
-authors "decel contributors"
+authors "Mathis Beer"
 license "BSL-1.0"
 
 targetType "library"

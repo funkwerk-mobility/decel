@@ -9,6 +9,10 @@ decel implements the [CEL spec](https://github.com/google/cel-spec) as a
 single-pass interpreter with no AST. See [COMPATIBILITY.md](COMPATIBILITY.md)
 for known deviations.
 
+## AI Notice
+
+This repo is ~entirely developed by Claude 4.6 Opus. Good job Opus!
+
 ## Installation
 
 Add to your `dub.sdl`:
