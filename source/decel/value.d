@@ -127,7 +127,10 @@ struct Value
             Duration, // duration
             SysTime, // timestamp
             Err, // err
-            );
+
+            
+
+    );
 
     /// The underlying SumType storage.
     Inner inner;
@@ -207,6 +210,29 @@ struct Value
         return self.inner.match!((ref Err e) => e.message, (ref _) => null);
     }
 
+    /// Human-readable string representation of this Value.
+    string toString() const
+    {
+        import std.conv : to;
+
+        auto self = cast(Value) this;
+        return self.inner.match!(
+                (ref typeof(null) _) => "null",
+                (ref bool b) => b ? "true" : "false",
+                (ref long i) => i.to!string,
+                (ref ulong u) => u.to!string ~ "u",
+                (ref double d) => d.to!string,
+                (ref string s) => fmtString(s),
+                (ref immutable(ubyte)[] b) => fmtBytes(b),
+                (ref List l) => fmtList(l),
+                (ref Value[string] m) => fmtMap(m),
+                (ref Entry _) => "<entry>",
+                (ref Duration d) => fmtDuration(d),
+                (ref SysTime t) => fmtTimestamp(t),
+                (ref Err e) => "error: " ~ e.message,
+        );
+    }
+
     /// Hash support (needed when opEquals is defined).
     size_t toHash() const nothrow @trusted
     {
@@ -219,6 +245,126 @@ struct Value
         {
             return 0;
         }
+    }
+
+    /// Format helpers for toString — defined as statics so dfmt leaves
+    /// the match table above as a clean, scannable list.
+private static:
+
+    string fmtString(string s)
+    {
+        char[] buf;
+        buf ~= '"';
+        foreach (c; s)
+        {
+            switch (c)
+            {
+            case '"':
+                buf ~= `\"`;
+                break;
+            case '\\':
+                buf ~= `\\`;
+                break;
+            case '\n':
+                buf ~= `\n`;
+                break;
+            case '\r':
+                buf ~= `\r`;
+                break;
+            case '\t':
+                buf ~= `\t`;
+                break;
+            default:
+                buf ~= c;
+                break;
+            }
+        }
+        buf ~= '"';
+        return cast(string) buf;
+    }
+
+    string fmtBytes(immutable(ubyte)[] bytes)
+    {
+        import std.format : format;
+
+        char[] buf;
+        buf ~= "b\"";
+        foreach (b; bytes)
+            buf ~= format!"%02x"(b);
+        buf ~= '"';
+        return cast(string) buf;
+    }
+
+    string fmtList(List list)
+    {
+        char[] buf;
+        buf ~= '[';
+        foreach (i; 0 .. list.length)
+        {
+            if (i > 0)
+                buf ~= ", ";
+            buf ~= list.index(i).toString();
+        }
+        buf ~= ']';
+        return cast(string) buf;
+    }
+
+    string fmtMap(Value[string] map)
+    {
+        import std.algorithm : sort;
+
+        char[] buf;
+        buf ~= '{';
+        auto keys = map.keys;
+        keys.sort();
+        bool first = true;
+        foreach (k; keys)
+        {
+            if (!first)
+                buf ~= ", ";
+            first = false;
+            buf ~= fmtString(k);
+            buf ~= ": ";
+            buf ~= map[k].toString();
+        }
+        buf ~= '}';
+        return cast(string) buf;
+    }
+
+    string fmtDuration(Duration d)
+    {
+        import std.format : format;
+
+        long totalSecs = d.total!"seconds";
+        bool negative = totalSecs < 0;
+        if (negative)
+            totalSecs = -totalSecs;
+        long rem = totalSecs;
+        long h = rem / 3600;
+        rem %= 3600;
+        long m = rem / 60;
+        long sec = rem % 60;
+        char[] buf;
+        if (negative)
+            buf ~= '-';
+        buf ~= "PT";
+        if (h > 0)
+            buf ~= format!"%dH"(h);
+        if (m > 0)
+            buf ~= format!"%dM"(m);
+        if (sec > 0 || (h == 0 && m == 0))
+            buf ~= format!"%dS"(sec);
+        return cast(string) buf;
+    }
+
+    string fmtTimestamp(SysTime st)
+    {
+        import std.format : format;
+
+        auto utc = st.toUTC();
+        return format!"%04d-%02d-%02dT%02d:%02d:%02dZ"(
+                utc.year, cast(int) utc.month, utc.day,
+                utc.hour, utc.minute, utc.second);
     }
 }
 
@@ -340,6 +486,92 @@ unittest
 
     // List via ArrayList
     value([value(1L), value(2L)]).type.should.be(Value.Type.list);
+}
+
+@("Value: toString basics")
+unittest
+{
+    import dshould;
+
+    // Null
+    Value.null_().toString().should.be("null");
+
+    // Booleans
+    value(true).toString().should.be("true");
+    value(false).toString().should.be("false");
+
+    // Integers
+    value(0L).toString().should.be("0");
+    value(42L).toString().should.be("42");
+    value(-7L).toString().should.be("-7");
+
+    // Unsigned integers
+    value(42UL).toString().should.be("42u");
+    value(0UL).toString().should.be("0u");
+
+    // Doubles
+    value(3.14).toString().should.be("3.14");
+    value(0.0).toString().should.be("0");
+    value(-2.5).toString().should.be("-2.5");
+
+    // Strings
+    value("hello").toString().should.be(`"hello"`);
+    value("").toString().should.be(`""`);
+    value("with \"quotes\"").toString().should.be(`"with \"quotes\""`);
+    value("line\nbreak").toString().should.be(`"line\nbreak"`);
+    value("tab\there").toString().should.be(`"tab\there"`);
+
+    // Bytes
+    value(cast(immutable(ubyte)[])[0x48, 0x69]).toString().should.be(`b"4869"`);
+    value(cast(immutable(ubyte)[])[]).toString().should.be(`b""`);
+
+    // Errors
+    Value.err("something broke").toString().should.be("error: something broke");
+}
+
+@("Value: toString collections")
+unittest
+{
+    import dshould;
+
+    // Lists
+    value(cast(Value[])[]).toString().should.be("[]");
+    value([value(1L), value(2L), value(3L)]).toString().should.be("[1, 2, 3]");
+    value([value("a"), value("b")]).toString().should.be(`["a", "b"]`);
+
+    // Nested lists
+    value([value([value(1L), value(2L)]), value([value(3L)])]).toString()
+        .should.be("[[1, 2], [3]]");
+
+    // Maps (keys sorted alphabetically)
+    Value[string] m;
+    m["b"] = value(2L);
+    m["a"] = value(1L);
+    Value(m).toString().should.be(`{"a": 1, "b": 2}`);
+
+    // Empty map
+    Value[string] empty;
+    Value(empty).toString().should.be("{}");
+}
+
+@("Value: toString duration and timestamp")
+unittest
+{
+    import dshould;
+    import core.time : hours, minutes, seconds;
+    import std.datetime.systime : SysTime;
+    import std.datetime.date : DateTime;
+    import std.datetime.timezone : UTC;
+
+    // Durations
+    value(1.hours + 30.minutes).toString().should.be("PT1H30M");
+    value(90.seconds).toString().should.be("PT1M30S");
+    value(0.seconds).toString().should.be("PT0S");
+    value(2.hours).toString().should.be("PT2H");
+
+    // Timestamps
+    value(SysTime(DateTime(2023, 1, 15, 12, 30, 45), UTC())).toString()
+        .should.be("2023-01-15T12:30:45Z");
 }
 
 @("Value: deep equality")

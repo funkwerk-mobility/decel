@@ -31,11 +31,11 @@ unittest: ## Run unit tests via unit-threaded
 
 format: ## Format source code with dfmt (shows diff of changes)
 	@for f in $$(find $(SOURCE_DIR) -name '*.d'); do \
-		$(DFMT) < "$$f" | diff -u "$$f" - | sed "s|--- $$f|--- a/$$f|;s|+++ -|+++ b/$$f|" > /tmp/dfmt_diff 2>&1 || true; \
+		$(DFMT) --keep_line_breaks=true < "$$f" | diff -u "$$f" - | sed "s|--- $$f|--- a/$$f|;s|+++ -|+++ b/$$f|" > /tmp/dfmt_diff 2>&1 || true; \
 		if [ -s /tmp/dfmt_diff ]; then \
 			echo "dfmt reformatted: $$f"; \
 			cat /tmp/dfmt_diff; \
-			$(DFMT) -i "$$f"; \
+			$(DFMT) --keep_line_breaks=true -i "$$f"; \
 		fi; \
 	done
 
