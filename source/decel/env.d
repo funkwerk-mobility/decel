@@ -10,13 +10,15 @@ import decel.context;
 import decel.lexer;
 import decel.value;
 
-/// A macro receives the token range, env, and context to handle its own
-/// argument parsing. The opening '(' has already been consumed; the macro
-/// must consume ')'.
+/// A function-call macro. Invoked when the parser sees `name(...)`.
+/// The opening '(' has already been consumed; the macro must parse its
+/// arguments and consume the closing ')' before returning.
 alias Macro = Value delegate(ref TokenRange r, const Env env, Context ctx);
 
-/// A method macro receives the target object, token range, env, and context.
-/// The opening '(' has already been consumed; the macro must consume ')'.
+/// A method-call macro. Invoked when the parser sees `expr.name(...)`.
+/// The opening '(' has already been consumed; the macro must parse its
+/// arguments and consume the closing ')' before returning.
+/// `target` is the already-evaluated receiver expression.
 alias MethodMacro = Value delegate(Value target, ref TokenRange r, const Env env, Context ctx);
 
 /++

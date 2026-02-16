@@ -343,10 +343,10 @@ private void parseMapEntry(ref TokenRange r, const Env env, Context ctx, ref Val
     r.expect(Token.Kind.colon);
     auto valExpr = parseExpr(r, env, ctx, 0);
 
-    string keyStr = keyVal.inner.match!((ref string s) => s, (ref _) => null,);
-    if (keyStr is null)
+    auto keyStr = tryGet!string(keyVal);
+    if (keyStr.isNull)
         throw new EvalException("map keys must be strings", keyTok.pos);
-    entries[keyStr] = valExpr;
+    entries[keyStr.get] = valExpr;
 }
 
 // ── Operator precedence ─────────────────────────────────────────────
