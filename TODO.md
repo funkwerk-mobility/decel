@@ -48,16 +48,18 @@
       `1u < 2` should work, `1.0 == 1` should be `true`. Currently
       uint and int are separate types with no cross-comparison.
 
+- [ ] **Duration and timestamp types** — CEL has `google.protobuf.Timestamp`
+      and `google.protobuf.Duration` as first-class types. Use D's
+      `core.time.Duration` and `std.datetime.SysTime`. Support arithmetic
+      (timestamp - timestamp → duration, timestamp + duration → timestamp),
+      comparison, and `duration()`/`timestamp()` constructors.
+
 - [ ] **README with examples** — Usage documentation, API examples,
       quick-start guide. Can't ship a library without docs.
 
 ## 🔮 Post-1.0
 
 ### Medium Priority
-
-- [ ] **Duration and timestamp types** — CEL has `google.protobuf.Timestamp`
-      and `google.protobuf.Duration` as first-class types with arithmetic.
-      Could use D's `core.time.Duration` and `std.datetime.SysTime`.
 
 - [ ] **Non-string map keys** — CEL spec allows `bool`, `int`, `uint`, and
       `string` as map keys. We only support `string`. Would need to change
