@@ -16,7 +16,10 @@ configuration "library" {
 configuration "unittest" {
 	targetType "executable"
 	targetPath "build/test"
-	mainSourceFile "source/test_runner.d"
+
+	mainSourceFile "build/ut.d"
+	targetType "executable"
+	preBuildCommands "$DUB run --compiler=$$DC unit-threaded -c gen_ut_main -- -f build/ut.d -d $DUB"
 
 	dependency "unit-threaded" version="~>2.1"
 	dependency "dshould" version="~>1.8.0"
