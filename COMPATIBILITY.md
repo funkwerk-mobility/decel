@@ -22,8 +22,14 @@ There is no AST, no type-checking phase, and no program caching.
 filtering). Queries are not reused, so caching provides no benefit.
 Single-pass keeps the implementation simple and latency low.
 
+## Regex flavor
+
+CEL specifies RE2 syntax for `.matches()`. decel uses D's `std.regex`,
+which is PCRE-flavored. In practice the overlap covers the vast majority
+of patterns. Exotic RE2 features (e.g. named Unicode classes) may differ.
+
 ## Unimplemented features
 
-- `has()` macro — requires unevaluated argument handling
-- Bytes literals — tokenized but not fully tested
-- Overload resolution — no custom function dispatch yet
+- Bytes operations — tokenized but not fully operational
+- Integer overflow detection — wraps silently (CEL spec says this is optional)
+- `dyn()` type, enum support

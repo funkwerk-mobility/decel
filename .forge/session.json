@@ -2,11 +2,12 @@
   "active_files": [
     "source/decel/package.d",
     "source/decel/env.d",
+    "dub.sdl",
+    "COMPATIBILITY.md",
     "source/decel/program.d",
     "source/decel/value.d",
     "source/decel/eval.d",
-    "TODO.md",
-    "source/decel/context.d"
+    "TODO.md"
   ],
   "request_log_entries": [
     {
@@ -611,6 +612,51 @@
       "streaming": true,
       "actual_cost": 0.0549465,
       "generation_id": "gen-1771235377-XCCQr5Rdk2nwHzl64ZC5"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771235445441.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771235445441.json",
+      "timestamp": 1771235445.4423234,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": null,
+      "generation_id": "gen-1771235445-Q4FMYXIZo5u1aeJQmvyA"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771235473103.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771235473103.json",
+      "timestamp": 1771235473.1047938,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.041137,
+      "generation_id": "gen-1771235473-QLKyEM0qnVGz6LA3wO09"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771235478366.json",
+      "response_file": null,
+      "timestamp": 1771235478.372413,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": null,
+      "generation_id": null
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771235499787.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771235499787.json",
+      "timestamp": 1771235499.7888463,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.11292225,
+      "generation_id": "gen-1771235500-ShTejhQTfWcgtVh7fmbV"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_1771235565152.json",
+      "response_file": "/tmp/forge_debug/response_1771235565152.json",
+      "timestamp": 1771235565.152952,
+      "model": "anthropic/claude-haiku-4.5",
+      "streaming": false,
+      "actual_cost": 0.002393,
+      "generation_id": "gen-1771235565-oisyczc9aR3yq0okc6YF"
     }
   ],
   "messages": [
@@ -2077,6 +2123,115 @@
         {
           "commit": "77479f589b94",
           "message": "Committed: 4 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 39a3d271",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "yeah I think there's a bug in the framework where delete doesn't work, my bad. okay, what's left for blockers?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLooking at the TODO, the only remaining 1.0 blocker is:\n\n> **README with examples** \u2014 Usage documentation, API examples, quick-start guide.\n\nEverything else is checked off:\n- \u2705 Lexer, parser, all operators\n- \u2705 Duration/timestamp types\n- \u2705 `.matches()` regex\n- \u2705 Null semantics\n- \u2705 Cross-type numeric comparison\n- \u2705 Clean public API (`Value.get!T`, `errMessage`, selective exports)\n- \u2705 Comprehensions, macros, the works\n\nWant me to write the README? I'll cover:\n1. What it is (CEL for D)\n2. Quick-start / installation (DUB)\n3. Basic usage (`evaluate`, `contextFrom`, extracting results)\n4. All the features (types, operators, methods, comprehensions, duration/timestamp)\n5. Custom macros\n6. Error handling story\n7. Deviations from spec (link to COMPATIBILITY.md)"
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 598145ac",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "go for it! go brief on what it is (with links) then go directly into how to use it."
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me first check what's in the current README and COMPATIBILITY.md, then write the README:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"add\": [\"COMPATIBILITY.md\", \"dub.sdl\"], \"remove\": [\"source/decel/program.d\", \"source/decel/context.d\"]}",
+            "name": "update_context"
+          },
+          "id": "toolu_vrtx_011ZaQYjQZ1GmamVLebbXXRm",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_vrtx_011ZaQYjQZ1GmamVLebbXXRm",
+      "content": "{\"action\": \"update_context\", \"add\": [\"COMPATIBILITY.md\", \"dub.sdl\"], \"message\": \"Added 2 files, removed 2 files from context\", \"remove\": [\"source/decel/program.d\", \"source/decel/context.d\"], \"success\": true}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nNow I have the full picture. Let me also update COMPATIBILITY.md since it's stale (says `has()` is unimplemented), then write the README:\n\n<edit file=\"COMPATIBILITY.md\">\n# decel \u2014 CEL Compatibility Notes\n\nThis document tracks intentional deviations from the\n[CEL specification](https://github.com/google/cel-spec).\n\n## String-only map keys\n\nThe CEL spec allows `bool`, `int`, `uint`, and `string` as map keys.\ndecel only supports `string` keys (`Value[string]`).\n\n**Rationale**: Non-string map keys add complexity with minimal practical\nbenefit. Every real-world CEL usage we've seen uses string keys. This\nkeeps the implementation simple and idiomatic in D.\n\n## No compile/check step\n\nThe CEL spec envisions a compile \u2192 check \u2192 evaluate pipeline.\ndecel evaluates in a single pass: tokenize \u2192 interpret.\nThere is no AST, no type-checking phase, and no program caching.\n\n**Rationale**: decel targets low-frequency query evaluation (web API\nfiltering). Queries are not reused, so caching provides no benefit.\nSingle-pass keeps the implementation simple and latency low.\n\n## Regex dialect\n\nCEL specifies RE2 syntax for `.matches()`. decel uses D's `std.regex`,\nwhich is mostly compatible but not identical to RE2.\n\n## Unimplemented features\n\n- **Non-string map keys** \u2014 see above\n- **Bytes operations** \u2014 bytes literals are tokenized but not fully operational\n- **Integer overflow detection** \u2014 wraps silently (CEL spec says this is optional)\n- **`dyn()` type** \u2014 dynamic type assertion, rarely used\n- **Enum support** \u2014 protobuf enum values by name\n- **Overload resolution** \u2014 no custom function dispatch yet\n</edit>\n\n<edit file=\"README.md\">\n# decel\n\nA [Common Expression Language (CEL)](https://cel.dev/) implementation for D.\n\nCEL is a non-Turing-complete expression language designed for evaluating\nuser-supplied expressions safely \u2014 think API filtering, access control\npolicies, and validation rules. See the [CEL spec](https://github.com/google/cel-spec)\nand [language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md).\n\n## Installation\n\nAdd to your `dub.sdl`:\n\n```sdl\ndependency \"decel\" version=\"~>1.0\"\n```\n\nOr `dub.json`:\n\n```json\n\"dependencies\": { \"decel\": \"~>1.0\" }\n```\n\n## Usage\n\n```d\nimport decel;\n\n// Evaluate a simple expression\nauto result = evaluate(`1 + 2`, emptyContext());\nassert(result == value(3L));\n\n// Extract the D value\nlong n = result.get!long;  // throws on type mismatch or error\n```\n\n### Variables\n\nPass variables via a `Context` \u2014 an associative array of string names to `Value`s:\n\n```d\nauto ctx = contextFrom([\n    \"user\":  value(\"alice\"),\n    \"age\":   value(30L),\n    \"admin\": value(true),\n]);\n\nevaluate(`user == \"alice\" && age >= 18`, ctx);  // Value(true)\n```\n\nNested maps work naturally:\n\n```d\nauto ctx = contextFrom([\n    \"req\": value([\n        \"method\": value(\"GET\"),\n        \"path\":   value(\"/api/users\"),\n    ]),\n]);\n\nevaluate(`req.method == \"GET\"`, ctx);  // Value(true)\nevaluate(`req.path."
+    },
+    {
+      "role": "user",
+      "content": "**Error from LLM provider:**\n\n```\n(\"Connection broken: ConnectionResetError(104, 'Die Verbindung wurde vom Kommunikationspartner zur\u00fcckgesetzt')\", ConnectionResetError(104, 'Die Verbindung wurde vom Kommunikationspartner zur\u00fcckgesetzt'))\n```"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nNow I have everything I need. Let me also update COMPATIBILITY.md since `has()` is implemented now, then write the README:\n\n<edit file=\"COMPATIBILITY.md\">\n# decel \u2014 CEL Compatibility Notes\n\nThis document tracks intentional deviations from the\n[CEL specification](https://github.com/google/cel-spec).\n\n## String-only map keys\n\nThe CEL spec allows `bool`, `int`, `uint`, and `string` as map keys.\ndecel only supports `string` keys (`Value[string]`).\n\n**Rationale**: Non-string map keys add complexity with minimal practical\nbenefit. Every real-world CEL usage we've seen uses string keys. This\nkeeps the implementation simple and idiomatic in D.\n\n## No compile/check step\n\nThe CEL spec envisions a compile \u2192 check \u2192 evaluate pipeline.\ndecel evaluates in a single pass: tokenize \u2192 interpret.\nThere is no AST, no type-checking phase, and no program caching.\n\n**Rationale**: decel targets low-frequency query evaluation (web API\nfiltering). Queries are not reused, so caching provides no benefit.\nSingle-pass keeps the implementation simple and latency low.\n\n## Regex flavor\n\nCEL specifies RE2 syntax for `.matches()`. decel uses D's `std.regex`,\nwhich is PCRE-flavored. In practice the overlap covers the vast majority\nof patterns. Exotic RE2 features (e.g. named Unicode classes) may differ.\n\n## Unimplemented features\n\n- Bytes operations \u2014 tokenized but not fully operational\n- Integer overflow detection \u2014 wraps silently (CEL spec says this is optional)\n- `dyn()` type, enum support\n</edit>\n\n<edit file=\"README.md\">\n# decel\n\nA [Common Expression Language (CEL)](https://cel.dev/) evaluator for D.\nCEL is a non-Turing-complete expression language designed for evaluating\nsimple, safe expressions \u2014 typically policy rules, filters, or validation\nchecks.\n\ndecel implements the [CEL spec](https://github.com/google/cel-spec) as a\nsingle-pass interpreter with no AST. See [COMPATIBILITY.md](COMPATIBILITY.md)\nfor known deviations.\n\n## Installation\n\nAdd to your `dub.sdl`:\n\n```sdl\ndependency \"decel\" version=\"~>1.0\"\n```\n\nOr `dub.json`:\n\n```json\n\"dependencies\": { \"decel\": \"~>1.0\" }\n```\n\n## Usage\n\n```d\nimport decel;\n\n// Evaluate an expression\nauto result = evaluate(`1 + 2`, emptyContext());\nassert(result == value(3L));\n\n// With variables\nauto ctx = contextFrom([\n    \"user\":  value(\"alice\"),\n    \"role\":  value(\"admin\"),\n    \"level\": value(5L),\n]);\nauto allowed = evaluate(`role == \"admin\" || level >= 10`, ctx);\nassert(allowed == value(true));\n\n// Extract D types from results\nauto n = evaluate(`2 + 3`, emptyContext()).get!long;    // 5\nauto s = evaluate(`\"hi\"`, emptyContext()).get!string;    // \"hi\"\n\n// Check for errors\nauto err = evaluate(`1 / 0`, emptyContext());\nassert(err.type == Value.Type.err);\nassert(err.errMessage == \"division by zero\");\n```\n\n## Types\n\nCEL type          | D storage type              | Literal examples\n----------------- | --------------------------- | ----------------\n`int`             | `long`                      | `42`, `-1`, `0xFF`\n`uint`            | `ulong`                     | `42u`, `0xFFu`\n`double`          | `double`                    | `3.14`, `1.0`\n`bool`            | `bool`                      | `true`, `false`\n`string`          | `string`                    | `\"hello\"`, `'world'`, `\"\"\"multi\"\"\"`\n`bytes`           | `immutable(ubyte)[]`        | `b\"abc\"`\n`null_type`       | `typeof(null)`              | `null`\n`list`            | `Value[]`                   | `[1, 2, 3]`\n`map`             | `Value[string]`             | `{\"key\": \"value\"}`\n`duration`        | `core.time.Duration`        | `duration(\"PT1H30M\")`\n`timestamp`       | `std.datetime.SysTime`      | `timestamp(\"2023-01-15T12:00:00Z\")`\n\nCross-type numeric operations work naturally: `1u == 1` is `true`,\n`1 + 1.5` promotes to `double`.\n\n## Operators\n\n```\nArithmetic:   +  -  *  /  %\nComparison:   ==  !=  <  <=  >  >=\nLogical:      &&  ||  !\nConditional:  ? :\nMembership:   in\nIndex:        []\nMember:       .\n```\n\n`&&` and `||` short-circuit: `false && 1/0` evaluates to `false`.\nLogical operators enforce strict bool semantics \u2014 non-bool operands\nproduce an error value, not implicit coercion.\n\n## Functions and Methods\n\n```cel\n// Size\nsize([1, 2, 3])        // 3\n\"hello\".size()         // 5\n\n// String methods\n\"hello world\".contains(\"world\")     // true\n\"hello\".startsWith(\"hel\")           // true\n\"hello\".endsWith(\"llo\")             // true\n\"abc123\".matches(\"[a-z]+[0-9]+\")    // true (full-string match)\n\n// Type inspection\ntype(42)               // \"int\"\ntype(\"hello\")          // \"string\"\n\n// Type casts\nint(\"42\")              // 42\ndouble(42)             // 42.0\nstring(42)             // \"42\"\nuint(1)                // 1u\n\n// Existence check\nhas(request.auth)      // true if auth field exists (not an error)\n\n// Membership\n\"x\" in {\"x\": 1}       // true\n2 in [1, 2, 3]         // true\n\"el\" in \"hello\"        // true\n```\n\n## Comprehensions\n\nList comprehensions use a `list.method(var, expr)` syntax:\n\n```cel\n[1, 2, 3, 4, 5].filter(x, x > 3)         // [4, 5]\n[1, 2, 3].map(x, x * 2)                   // [2, 4, 6]\n[1, 2, 3].all(x, x > 0)                   // true\n[1, 2, 3].exists(x, x == 2)               // true\n[1, 2, 3].exists_one(x, x > 2)            // true\n```\n\nComprehensions chain: `[1,2,3,4].map(x, x*2).filter(y, y > 4)` \u2192 `[6, 8]`.\n\n## Duration and Timestamp\n\nDurations use [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Durations)\nformat. Timestamps use [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339).\n\n```cel\nduration(\"PT1H30M\").minutes()     // 90\nduration(\"PT1H\") + duration(\"PT30M\") == duration(\"PT1H30M\")  // true\n\ntimestamp(\"2023-01-15T12:00:00Z\").year()   // 2023\ntimestamp(\"2023-01-15T12:00:00Z\") + duration(\"PT1H\")\n    == timestamp(\"2023-01-15T13:00:00Z\")   // true\n```\n\nYou can also pass D values directly via the context:\n\n```d\nimport core.time : seconds, hours;\nimport std.datetime.systime : SysTime, Clock;\n\nauto ctx = contextFrom([\n    \"timeout\": value(30.seconds),\n    \"created\": value(Clock.currTime()),\n]);\nevaluate(\"timeout.seconds() > 10\", ctx);  // true\n```\n\n## Nested Objects via Entry\n\nFor structured data, subclass `Entry` to provide lazy field resolution:\n\n```d\nclass Request : Entry\n{\n    override Value resolve(string name)\n    {\n        switch (name)\n        {\n            case \"method\": return value(\"GET\");\n            case \"path\":   return value(\"/api/users\");\n            case \"auth\":   return value([\"user\": value(\"alice\")]);\n            default:       return Value.err(\"no such field: \" ~ name);\n        }\n    }\n}\n\nauto ctx = contextFrom([\"request\": Value(new Request())]);\nevaluate(`request.method == \"GET\"`, ctx);      // true\nevaluate(`request.auth.user`, ctx);            // \"alice\"\nevaluate(`has(request.auth)`, ctx);            // true\nevaluate(`has(request.missing)`, ctx);         // false\n```\n\n## Error Handling\n\nParse errors (syntax errors, unexpected tokens) throw `EvalException`:\n\n```d\ntry\n    evaluate(`1 +`, emptyContext());\ncatch (EvalException e)\n    writeln(e.msg);  // \"at position 3: unexpected eof\"\n```\n\nEvaluation errors (type mismatches, division by zero, missing keys) are\nreturned as error *values*, not exceptions:\n\n```d\nauto result = evaluate(`1 / 0`, emptyContext());\nif (result.type == Value.Type.err)\n    writeln(result.errMessage);  // \"division by zero\"\n```\n\nErrors propagate through operators and are absorbed by short-circuit\nlogic: `false && (1/0 == 1)` \u2192 `false`.\n\n## Custom Macros\n\nExtend the evaluator with custom function-call macros:\n\n```d\nimport decel;\nimport decel.env : TokenRange, Env;\nimport decel.eval : parseExpr;\n\nMacro[string] customs;\ncustoms[\"always_true\"] = delegate Value(ref TokenRange r, const Env env, Context ctx) {\n    parseExpr(r, env, ctx, 0);  // parse and discard the argument\n    r.expect(Token.Kind.rparen); // consume closing ')'\n    return value(true);\n};\n\nevaluateWithMacros(`always_true(anything)`, emptyContext(), customs);  // true\n```\n\nMacros receive the token stream and are responsible for parsing their own\narguments and consuming the closing `)`.\n\n## License\n\nBSL-1.0\n</edit>\n\nNow update the TODO to check off the README blocker:\n\n<edit file=\"TODO.md\">\n<search>\n- [ ] **README with examples** \u2014 Usage documentation, API examples,\n      quick-start guide. Can't ship a library without docs.\n</search>\n<replace>\n- [x] **README with examples** \u2014 Usage documentation, API examples,\n      quick-start guide.\n</replace>\n</edit>\n\n<run_tests/>\n<commit message=\"Add README, update COMPATIBILITY.md, complete 1.0 blockers\n\n- Write comprehensive README with usage examples covering all features:\n  types, operators, functions, comprehensions, duration/timestamp,\n  Entry for nested objects, error handling, custom macros\n- Update COMPATIBILITY.md: remove has() from unimplemented (it works),\n  add regex flavor note, clean up unimplemented list\n- Check off README blocker in TODO \u2014 all 1.0 blockers complete\n\" />\n\nAll 1.0 blockers are now done! Here's what the README covers:\n\n- **Quick install** via DUB\n- **Basic usage** \u2014 `evaluate`, `contextFrom`, `Value.get!T`, error checking\n- **Types table** \u2014 all 11 types with D storage types and literal syntax\n- **Operators** \u2014 with notes on short-circuit and strict bool semantics\n- **Functions/methods** \u2014 `size`, string methods, `matches`, `type`, casts, `has`, `in`\n- **Comprehensions** \u2014 `filter`, `map`, `all`, `exists`, `exists_one` with chaining\n- **Duration/timestamp** \u2014 constructors, arithmetic, accessors, passing D values via context\n- **Entry** \u2014 lazy nested objects pattern\n- **Error handling** \u2014 `EvalException` vs error values, propagation\n- **Custom macros** \u2014 extending the evaluator\n\nAlso cleaned up COMPATIBILITY.md to remove `has()` from unimplemented (it's been working for a while) and added a note about regex flavor (D's `std.regex` vs RE2).",
+      "_inline_results": [
+        {
+          "message": "Wrote 1326 bytes to COMPATIBILITY.md",
+          "modified_files": [
+            "COMPATIBILITY.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Wrote 6504 bytes to README.md",
+          "modified_files": [
+            "README.md"
+          ],
+          "new_files": [
+            "README.md"
+          ],
+          "side_effects": [
+            "files_modified",
+            "new_files_created"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in TODO.md",
+          "modified_files": [
+            "TODO.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: unknown variable from context:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\n\nTime taken: 1 ms, 962 \u03bcs, and 7 hnsecs\n55 test(s) run, 0 failed.\n\nOK!\n\n",
+          "output": "decel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: nested member access:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: operator precedence:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: type casts:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.value.Value: construct and check types:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: unknown variable from context:\ndecel.value.Value: deep equality:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: timestamp constructor and methods:\n\nTime taken: 1 ms, 962 \u03bcs, and 7 hnsecs\n55 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "24b57bb1e3eb",
+          "message": "Committed: 3 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],

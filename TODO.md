@@ -57,8 +57,8 @@
 - [x] **Clean public API** — Selective exports in `package.d`, `Value.get!T`
       for type-safe extraction, `Value.errMessage` for error inspection.
 
-- [ ] **README with examples** — Usage documentation, API examples,
-      quick-start guide. Can't ship a library without docs.
+- [x] **README with examples** — Usage documentation, API examples,
+      quick-start guide.
 
 ## 🔮 Post-1.0
 
