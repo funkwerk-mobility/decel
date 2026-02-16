@@ -8,6 +8,8 @@ import std.datetime.systime : SysTime;
 import std.sumtype;
 import std.typecons : Nullable;
 
+import decel.exception : EvalException;
+
 /// Lazy value resolution. Subclass to provide deferred/lazy field access.
 abstract class Entry
 {
@@ -139,21 +141,21 @@ struct Value
     }
 
     /// Extract the underlying D value of type T.
-    /// Throws if the Value holds an error or a different type.
+    /// Throws `EvalException` if the Value holds an error or a different type.
     T get(T)() const
     {
         auto self = cast(Value) this;
         if (self.type == Type.err)
         {
             auto e = self.inner.match!((ref Err err) => err.message, (ref _) => "unknown error");
-            throw new Exception("Value is an error: " ~ e);
+            throw new EvalException("Value is an error: " ~ e);
         }
         auto result = self.inner.match!((ref T val) => Nullable!T(val), (ref _) => Nullable!T.init);
         if (result.isNull)
         {
             import std.conv : to;
 
-            throw new Exception("Value type mismatch: expected " ~ T.stringof);
+            throw new EvalException("type mismatch: expected " ~ T.stringof);
         }
         return result.get;
     }

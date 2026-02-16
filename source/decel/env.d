@@ -10,6 +10,9 @@ import decel.context;
 import decel.lexer;
 import decel.value;
 
+// Re-export EvalException from its own module (avoids circular imports).
+public import decel.exception : EvalException;
+
 /// A function-call macro. Invoked when the parser sees `name(...)`.
 /// The opening '(' has already been consumed; the macro must parse its
 /// arguments and consume the closing ')' before returning.
@@ -20,26 +23,6 @@ alias Macro = Value delegate(ref TokenRange r, const Env env, Context ctx);
 /// arguments and consume the closing ')' before returning.
 /// `target` is the already-evaluated receiver expression.
 alias MethodMacro = Value delegate(Value target, ref TokenRange r, const Env env, Context ctx);
-
-/++
- + Exception thrown for parse errors (syntax errors, unexpected tokens).
- + Evaluation errors (division by zero, type mismatches) are represented
- + as Value.err instead.
- +/
-class EvalException : Exception
-{
-    /// Byte offset in the source where the error occurred.
-    immutable size_t position;
-
-    /// Construct an EvalException with a message and source position.
-    this(string msg, size_t pos, string file = __FILE__, size_t line = __LINE__)
-    {
-        import std.format : format;
-
-        super(format!"at position %d: %s"(pos, msg), file, line);
-        position = pos;
-    }
-}
 
 /// Human-readable name for a token kind.
 string kindName(Token.Kind kind)

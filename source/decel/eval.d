@@ -29,7 +29,8 @@ import std.sumtype : match;
 import std.typecons : Nullable, nullable;
 
 // Re-export EvalException and kindName so existing callers still work.
-public import decel.env : EvalException, kindName;
+public import decel.exception : EvalException;
+public import decel.env : kindName;
 
 /// Evaluate a CEL expression string against a context.
 Value evaluate(string source, Context ctx)
@@ -797,6 +798,7 @@ private Value evalFunction(string name, Value[] args, size_t pos)
         if (args.length != 0)
             throw new EvalException("now() takes no arguments", pos);
         import std.datetime.systime : Clock;
+
         return Value(Clock.currTime(UTC()));
     default:
         throw new EvalException("unknown function: " ~ name, pos);

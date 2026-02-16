@@ -25,7 +25,10 @@ public import decel.value : Value, Entry, List, ArrayList, value;
 public import decel.context : Context, contextFrom, emptyContext, bindContext;
 
 // Evaluation
-public import decel.eval : evaluate, evaluateWithMacros, EvalException;
+public import decel.eval : evaluate, evaluateWithMacros;
+
+// Exception type (re-exported via eval and env too, but canonical source is here)
+public import decel.exception : EvalException;
 
 // Extension points
 public import decel.env : Env, Macro, MethodMacro, TokenRange;
