@@ -54,12 +54,18 @@
         `.year()`, `.month()`, `.day()`, `.hour()`, `.minute()`, `.second()` on timestamp
   - [x] `string()` cast support for both types
 
+- [x] **Clean public API** — Selective exports in `package.d`, `Value.get!T`
+      for type-safe extraction, `Value.errMessage` for error inspection.
+
 - [ ] **README with examples** — Usage documentation, API examples,
       quick-start guide. Can't ship a library without docs.
 
 ## 🔮 Post-1.0
 
 ### Medium Priority
+
+- [ ] **Performance** — Currently re-tokenizes on every `evaluate()` call.
+      Could cache token arrays or build a simple AST for repeated evaluation.
 
 - [ ] **Non-string map keys** — CEL spec allows `bool`, `int`, `uint`, and
       `string` as map keys. We only support `string`. Would need to change
@@ -82,9 +88,6 @@
 - [ ] **`dyn()` type** — Dynamic type assertion, rarely used in practice.
 
 - [ ] **Enum support** — CEL can reference protobuf enum values by name.
-
-- [ ] **Performance** — Currently re-tokenizes on every `evaluate()` call.
-      Could cache token arrays or build a simple AST for repeated evaluation.
 
 ## 🏗️ Infrastructure
 

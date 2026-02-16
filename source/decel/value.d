@@ -6,6 +6,7 @@ module decel.value;
 import core.time : Duration;
 import std.datetime.systime : SysTime;
 import std.sumtype;
+import std.typecons : Nullable;
 
 /// Lazy value resolution. Subclass to provide deferred/lazy field access.
 abstract class Entry
@@ -99,6 +100,33 @@ struct Value
     bool opEquals()(auto ref const Value other) const
     {
         return valueEquals(this, other);
+    }
+
+    /// Extract the underlying D value of type T.
+    /// Throws if the Value holds an error or a different type.
+    T get(T)() const
+    {
+        auto self = cast(Value) this;
+        if (self.type == Type.err)
+        {
+            auto e = self.inner.match!((ref Err err) => err.message, (ref _) => "unknown error");
+            throw new Exception("Value is an error: " ~ e);
+        }
+        auto result = self.inner.match!((ref T val) => Nullable!T(val), (ref _) => Nullable!T.init);
+        if (result.isNull)
+        {
+            import std.conv : to;
+
+            throw new Exception("Value type mismatch: expected " ~ T.stringof);
+        }
+        return result.get;
+    }
+
+    /// Get the error message from an error Value, or null if not an error.
+    string errMessage() const
+    {
+        auto self = cast(Value) this;
+        return self.inner.match!((ref Err e) => e.message, (ref _) => null);
     }
 
     /// Hash support (needed when opEquals is defined).
