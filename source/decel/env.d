@@ -10,9 +10,6 @@ import decel.context;
 import decel.lexer;
 import decel.value;
 
-/// Forward reference to TokenRange (defined in eval module).
-/// We use Token[] + size_t here to avoid circular imports.
-
 /// A macro receives the token range, env, and context to handle its own
 /// argument parsing. The opening '(' has already been consumed; the macro
 /// must consume ')'.
@@ -21,6 +18,34 @@ alias Macro = Value delegate(ref TokenRange r, const Env env, Context ctx);
 /// A method macro receives the target object, token range, env, and context.
 /// The opening '(' has already been consumed; the macro must consume ')'.
 alias MethodMacro = Value delegate(Value target, ref TokenRange r, const Env env, Context ctx);
+
+/++
+ + Exception thrown for parse errors (syntax errors, unexpected tokens).
+ + Evaluation errors (division by zero, type mismatches) are represented
+ + as Value.err instead.
+ +/
+class EvalException : Exception
+{
+    /// Byte offset in the source where the error occurred.
+    immutable size_t position;
+
+    /// Construct an EvalException with a message and source position.
+    this(string msg, size_t pos, string file = __FILE__, size_t line = __LINE__)
+    {
+        import std.format : format;
+
+        super(format!"at position %d: %s"(pos, msg), file, line);
+        position = pos;
+    }
+}
+
+/// Human-readable name for a token kind.
+string kindName(Token.Kind kind)
+{
+    import std.conv : to;
+
+    return kind.to!string;
+}
 
 /// Token cursor — the linear parser state. Just a position in a token array.
 struct TokenRange
@@ -51,8 +76,6 @@ struct TokenRange
         auto tok = peek();
         if (tok.kind != kind)
         {
-            import decel.eval : EvalException, kindName;
-
             throw new EvalException("expected " ~ kindName(kind) ~ ", got " ~ tok.toString(),
                     tok.pos);
         }
@@ -84,27 +107,4 @@ struct Env
     Macro[string] macros;
     /// Registered method macros (method-call style).
     MethodMacro[string] methodMacros;
-
-    /// Create a standard environment with all built-in macros.
-    static Env standard()
-    {
-        import decel.eval : builtinMacros, builtinMethodMacros;
-
-        Env e;
-        e.macros = builtinMacros();
-        e.methodMacros = builtinMethodMacros();
-        return e;
-    }
-
-    /// Create a standard environment merged with user-supplied macros.
-    static Env withMacros(Macro[string] userMacros)
-    {
-        auto e = standard();
-        if (userMacros !is null)
-        {
-            foreach (k, v; userMacros)
-                e.macros[k] = v;
-        }
-        return e;
-    }
 }

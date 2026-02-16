@@ -23,31 +23,15 @@ import decel.value;
 
 import std.conv : to, ConvException;
 import std.sumtype : match;
+import std.typecons : Nullable, nullable;
 
-/++
- + Exception thrown for parse errors (syntax errors, unexpected tokens).
- + Evaluation errors (division by zero, type mismatches) are represented
- + as Value.err instead.
- +/
-class EvalException : Exception
-{
-    /// Byte offset in the source where the error occurred.
-    immutable size_t position;
-
-    /// Construct an EvalException with a message and source position.
-    this(string msg, size_t pos, string file = __FILE__, size_t line = __LINE__)
-    {
-        import std.format : format;
-
-        super(format!"at position %d: %s"(pos, msg), file, line);
-        position = pos;
-    }
-}
+// Re-export EvalException and kindName so existing callers still work.
+public import decel.env : EvalException, kindName;
 
 /// Evaluate a CEL expression string against a context.
 Value evaluate(string source, Context ctx)
 {
-    auto env = Env.standard();
+    auto env = standardEnv();
     auto tokens = tokenize(source);
     auto r = TokenRange(tokens, 0);
     auto result = parseExpr(r, env, ctx, 0);
@@ -58,12 +42,26 @@ Value evaluate(string source, Context ctx)
 /// Evaluate a CEL expression with custom macros.
 Value evaluateWithMacros(string source, Context ctx, Macro[string] macros)
 {
-    auto env = Env.withMacros(macros);
+    auto env = standardEnv();
+    if (macros !is null)
+    {
+        foreach (k, v; macros)
+            env.macros[k] = v;
+    }
     auto tokens = tokenize(source);
     auto r = TokenRange(tokens, 0);
     auto result = parseExpr(r, env, ctx, 0);
     r.expect(Token.Kind.eof);
     return result;
+}
+
+/// Build the standard environment with all built-in macros.
+private Env standardEnv()
+{
+    Env e;
+    e.macros = builtinMacros();
+    e.methodMacros = builtinMethodMacros();
+    return e;
 }
 
 // ── Expression parsing (Pratt) ──────────────────────────────────────
@@ -143,7 +141,13 @@ Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
             auto rhs = parseExpr(r, env, ctx, prec + 1);
             if (isFalsy(lhs))
                 continue; // lhs stays false, absorbs RHS errors
-            lhs = rhs;
+            if (isTruthy(lhs))
+            {
+                lhs = toBool(rhs);
+                continue;
+            }
+            // lhs is non-bool error — propagate
+            lhs = Value.err("'&&' operand is not a bool: " ~ typeName(lhs));
             continue;
         }
         if (tok.kind == Token.Kind.pipePipe)
@@ -151,7 +155,13 @@ Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
             auto rhs = parseExpr(r, env, ctx, prec + 1);
             if (isTruthy(lhs))
                 continue; // lhs stays true, absorbs RHS errors
-            lhs = rhs;
+            if (isFalsy(lhs))
+            {
+                lhs = toBool(rhs);
+                continue;
+            }
+            // lhs is non-bool error — propagate
+            lhs = Value.err("'||' operand is not a bool: " ~ typeName(lhs));
             continue;
         }
 
@@ -268,6 +278,8 @@ private Value parseTernary(ref TokenRange r, const Env env, Context ctx, Value c
     auto elseVal = parseExpr(r, env, ctx, 0);
     if (cond.type == Value.Type.err)
         return cond;
+    if (cond.type != Value.Type.bool_)
+        return Value.err("ternary condition must be a bool, got " ~ typeName(cond));
     return isTruthy(cond) ? thenVal : elseVal;
 }
 
@@ -380,6 +392,53 @@ private bool isErr(Value v)
     return v.type == Value.Type.err;
 }
 
+/// Dispatch a binary op over two numeric values of the same type.
+/// Handles arithmetic (+, -, *, /, %) and comparison (<, <=, >, >=, ==, !=).
+private Value numericBinop(T)(T l, T r, Token.Kind op)
+{
+    switch (op)
+    {
+    case Token.Kind.plus:
+        return Value(l + r);
+    case Token.Kind.minus:
+        return Value(l - r);
+    case Token.Kind.star:
+        return Value(l * r);
+    case Token.Kind.slash:
+        static if (is(T == double))
+            return Value(l / r);
+        else
+        {
+            if (r == 0)
+                return Value.err("division by zero");
+            return Value(l / r);
+        }
+    case Token.Kind.percent:
+        static if (is(T == double))
+            return Value(l % r);
+        else
+        {
+            if (r == 0)
+                return Value.err("modulo by zero");
+            return Value(l % r);
+        }
+    case Token.Kind.eqEq:
+        return Value(l == r);
+    case Token.Kind.bangEq:
+        return Value(l != r);
+    case Token.Kind.lt:
+        return Value(l < r);
+    case Token.Kind.ltEq:
+        return Value(l <= r);
+    case Token.Kind.gt:
+        return Value(l > r);
+    case Token.Kind.gtEq:
+        return Value(l >= r);
+    default:
+        return Value.err("unsupported operator " ~ kindName(op) ~ " for numeric types");
+    }
+}
+
 private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
 {
     if (isErr(lhs))
@@ -387,115 +446,23 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
     if (isErr(rhs))
         return rhs;
 
-    // Arithmetic: int × int
-    auto li = tryGet!long(lhs);
-    auto ri = tryGet!long(rhs);
-    if (!li.isNull && !ri.isNull)
+    // Try each numeric type pair via static foreach.
+    alias NumericTypes = imported!"std.meta".AliasSeq!(long, ulong);
+    static foreach (T; NumericTypes)
     {
-        switch (op)
         {
-        case Token.Kind.plus:
-            return Value(li.get + ri.get);
-        case Token.Kind.minus:
-            return Value(li.get - ri.get);
-        case Token.Kind.star:
-            return Value(li.get * ri.get);
-        case Token.Kind.slash:
-            if (ri.get == 0)
-                return Value.err("division by zero");
-            return Value(li.get / ri.get);
-        case Token.Kind.percent:
-            if (ri.get == 0)
-                return Value.err("modulo by zero");
-            return Value(li.get % ri.get);
-        case Token.Kind.eqEq:
-            return Value(li.get == ri.get);
-        case Token.Kind.bangEq:
-            return Value(li.get != ri.get);
-        case Token.Kind.lt:
-            return Value(li.get < ri.get);
-        case Token.Kind.ltEq:
-            return Value(li.get <= ri.get);
-        case Token.Kind.gt:
-            return Value(li.get > ri.get);
-        case Token.Kind.gtEq:
-            return Value(li.get >= ri.get);
-        default:
-            break;
+            auto l = tryGet!T(lhs);
+            auto r = tryGet!T(rhs);
+            if (!l.isNull && !r.isNull)
+                return numericBinop!T(l.get, r.get, op);
         }
     }
 
-    // Arithmetic: uint × uint
-    auto lu = tryGet!ulong(lhs);
-    auto ru = tryGet!ulong(rhs);
-    if (!lu.isNull && !ru.isNull)
-    {
-        switch (op)
-        {
-        case Token.Kind.plus:
-            return Value(lu.get + ru.get);
-        case Token.Kind.minus:
-            return Value(lu.get - ru.get);
-        case Token.Kind.star:
-            return Value(lu.get * ru.get);
-        case Token.Kind.slash:
-            if (ru.get == 0)
-                return Value.err("division by zero");
-            return Value(lu.get / ru.get);
-        case Token.Kind.percent:
-            if (ru.get == 0)
-                return Value.err("modulo by zero");
-            return Value(lu.get % ru.get);
-        case Token.Kind.eqEq:
-            return Value(lu.get == ru.get);
-        case Token.Kind.bangEq:
-            return Value(lu.get != ru.get);
-        case Token.Kind.lt:
-            return Value(lu.get < ru.get);
-        case Token.Kind.ltEq:
-            return Value(lu.get <= ru.get);
-        case Token.Kind.gt:
-            return Value(lu.get > ru.get);
-        case Token.Kind.gtEq:
-            return Value(lu.get >= ru.get);
-        default:
-            break;
-        }
-    }
-
-    // Arithmetic: double × double (or mixed promotion)
+    // Double (with int/uint promotion)
     auto ld = toDouble(lhs);
     auto rd = toDouble(rhs);
     if (!ld.isNull && !rd.isNull)
-    {
-        switch (op)
-        {
-        case Token.Kind.plus:
-            return Value(ld.get + rd.get);
-        case Token.Kind.minus:
-            return Value(ld.get - rd.get);
-        case Token.Kind.star:
-            return Value(ld.get * rd.get);
-        case Token.Kind.slash:
-            return Value(ld.get / rd.get);
-        case Token.Kind.percent:
-            return Value(ld.get % rd.get);
-        case Token.Kind.eqEq:
-            return Value(ld.get == rd.get);
-        case Token.Kind.bangEq:
-            return Value(ld.get != rd.get);
-        case Token.Kind.lt:
-            return Value(ld.get < rd.get);
-        case Token.Kind.ltEq:
-            return Value(ld.get <= rd.get);
-        case Token.Kind.gt:
-            return Value(ld.get > rd.get);
-        case Token.Kind.gtEq:
-            return Value(ld.get >= rd.get);
-        default:
-            break;
-        }
-    }
+        return numericBinop!double(ld.get, rd.get, op);
 
     // String concatenation and comparison
     auto ls = tryGet!string(lhs);
@@ -956,6 +923,25 @@ private Value evalBody(ref TokenRange r, const Env env, Context ctx,
     return result;
 }
 
+/// Extract a list from a comprehension target, consuming args on error.
+/// Returns null on error (with lhs set to the error Value to return).
+private Nullable!(Value[]) extractListTarget(Value target, ref TokenRange r,
+        const Env env, Context ctx)
+{
+    if (isErr(target))
+    {
+        cast(void) parseComprehensionArgs(r, env, ctx);
+        return Nullable!(Value[]).init;
+    }
+    auto list = tryGet!(Value[])(target);
+    if (list.isNull)
+    {
+        cast(void) parseComprehensionArgs(r, env, ctx);
+        return Nullable!(Value[]).init;
+    }
+    return list;
+}
+
 /// `has(expr)` — true if expr doesn't produce an error.
 private Value macroHas(ref TokenRange r, const Env env, Context ctx)
 {
@@ -967,17 +953,9 @@ private Value macroHas(ref TokenRange r, const Env env, Context ctx)
 /// `list.all(x, body)` — true if body is true for all elements.
 private Value macroAll(Value target, ref TokenRange r, const Env env, Context ctx)
 {
-    if (isErr(target))
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return target;
-    }
-    auto list = tryGet!(Value[])(target);
+    auto list = extractListTarget(target, r, env, ctx);
     if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Value.err(".all() requires a list");
-    }
+        return isErr(target) ? target : Value.err(".all() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
     foreach (ref elem; list.get)
@@ -994,17 +972,9 @@ private Value macroAll(Value target, ref TokenRange r, const Env env, Context ct
 /// `list.exists(x, body)` — true if body is true for at least one element.
 private Value macroExists(Value target, ref TokenRange r, const Env env, Context ctx)
 {
-    if (isErr(target))
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return target;
-    }
-    auto list = tryGet!(Value[])(target);
+    auto list = extractListTarget(target, r, env, ctx);
     if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Value.err(".exists() requires a list");
-    }
+        return isErr(target) ? target : Value.err(".exists() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
     foreach (ref elem; list.get)
@@ -1021,17 +991,9 @@ private Value macroExists(Value target, ref TokenRange r, const Env env, Context
 /// `list.exists_one(x, body)` — true if body is true for exactly one element.
 private Value macroExistsOne(Value target, ref TokenRange r, const Env env, Context ctx)
 {
-    if (isErr(target))
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return target;
-    }
-    auto list = tryGet!(Value[])(target);
+    auto list = extractListTarget(target, r, env, ctx);
     if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Value.err(".exists_one() requires a list");
-    }
+        return isErr(target) ? target : Value.err(".exists_one() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
     int count = 0;
@@ -1051,17 +1013,9 @@ private Value macroExistsOne(Value target, ref TokenRange r, const Env env, Cont
 /// `list.map(x, body)` — transform each element.
 private Value macroMap(Value target, ref TokenRange r, const Env env, Context ctx)
 {
-    if (isErr(target))
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return target;
-    }
-    auto list = tryGet!(Value[])(target);
+    auto list = extractListTarget(target, r, env, ctx);
     if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Value.err(".map() requires a list");
-    }
+        return isErr(target) ? target : Value.err(".map() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
     Value[] result;
@@ -1078,17 +1032,9 @@ private Value macroMap(Value target, ref TokenRange r, const Env env, Context ct
 /// `list.filter(x, body)` — keep elements where body is true.
 private Value macroFilter(Value target, ref TokenRange r, const Env env, Context ctx)
 {
-    if (isErr(target))
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return target;
-    }
-    auto list = tryGet!(Value[])(target);
+    auto list = extractListTarget(target, r, env, ctx);
     if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Value.err(".filter() requires a list");
-    }
+        return isErr(target) ? target : Value.err(".filter() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
     Value[] result;
@@ -1233,8 +1179,6 @@ private string processEscapes(string s)
 
 // ── Value helpers ───────────────────────────────────────────────────
 
-import std.typecons : Nullable, nullable;
-
 private Nullable!T tryGet(T)(Value v)
 {
     return v.inner.match!((ref T val) => nullable(val), (ref _) => Nullable!T.init,);
@@ -1247,14 +1191,24 @@ private Nullable!double toDouble(Value v)
             (ref ulong u) => nullable(cast(double) u), (ref _) => Nullable!(double).init,);
 }
 
+/// True only for `Value(true)`. Non-bool values are NOT truthy.
 private bool isTruthy(Value v)
 {
-    return v.inner.match!((ref bool b) => b, (ref _) => true,);
+    return v.inner.match!((ref bool b) => b, (ref _) => false,);
 }
 
+/// True only for `Value(false)`. Non-bool values are NOT falsy.
 private bool isFalsy(Value v)
 {
-    return !isTruthy(v);
+    return v.inner.match!((ref bool b) => !b, (ref _) => false,);
+}
+
+/// Coerce a value to bool, returning an error for non-bool types.
+private Value toBool(Value v)
+{
+    if (v.type == Value.Type.bool_ || v.type == Value.Type.err)
+        return v;
+    return Value.err("expected bool, got " ~ typeName(v));
 }
 
 private string typeName(Value v)
@@ -1284,14 +1238,6 @@ private string typeName(Value v)
     case Value.Type.err:
         return "error";
     }
-}
-
-/// Human-readable name for a token kind.
-string kindName(Token.Kind kind)
-{
-    import std.conv : to;
-
-    return kind.to!string;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -1343,6 +1289,21 @@ unittest
     evaluate("!false", emptyContext()).should.be(value(true));
 }
 
+@("Eval: logical operators reject non-bool operands")
+unittest
+{
+    import dshould;
+
+    evaluate("1 && true", emptyContext()).type.should.be(Value.Type.err);
+    evaluate(`"yes" && true`, emptyContext()).type.should.be(Value.Type.err);
+    // Short-circuit still absorbs: false && <non-bool> → false, true || <non-bool> → true
+    evaluate("false && 1", emptyContext()).should.be(value(false));
+    evaluate("true || 1", emptyContext()).should.be(value(true));
+    // Non-short-circuit path rejects non-bool RHS
+    evaluate("true && 1", emptyContext()).type.should.be(Value.Type.err);
+    evaluate("false || 1", emptyContext()).type.should.be(Value.Type.err);
+}
+
 @("Eval: string operations")
 unittest
 {
@@ -1383,6 +1344,15 @@ unittest
 
     evaluate("true ? 1 : 2", emptyContext()).should.be(value(1L));
     evaluate("false ? 1 : 2", emptyContext()).should.be(value(2L));
+}
+
+@("Eval: ternary rejects non-bool condition")
+unittest
+{
+    import dshould;
+
+    evaluate("1 ? 2 : 3", emptyContext()).type.should.be(Value.Type.err);
+    evaluate(`"yes" ? 1 : 0`, emptyContext()).type.should.be(Value.Type.err);
 }
 
 @("Eval: list literals and indexing")
