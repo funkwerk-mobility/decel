@@ -25,6 +25,5 @@ Single-pass keeps the implementation simple and latency low.
 ## Unimplemented features
 
 - `has()` macro — requires unevaluated argument handling
-- `.matches()` — regex support not yet implemented
 - Bytes literals — tokenized but not fully tested
 - Overload resolution — no custom function dispatch yet
