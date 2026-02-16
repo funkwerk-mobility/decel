@@ -41,10 +41,18 @@
 ## 🎯 1.0.0 Blockers
 
 - [ ] **Duration and timestamp types** — CEL has `google.protobuf.Timestamp`
-      and `google.protobuf.Duration` as first-class types. Use D's
-      `core.time.Duration` and `std.datetime.SysTime`. Support arithmetic
-      (timestamp - timestamp → duration, timestamp + duration → timestamp),
-      comparison, and `duration()`/`timestamp()` constructors.
+      and `google.protobuf.Duration` as first-class types. D already has
+      `core.time.Duration` and `std.datetime.SysTime`, so we should use them.
+  - [ ] New `Value.Type` variants: `duration` and `timestamp`
+  - [ ] `duration()` constructor — parse strings like `"1h30m"`, `"3600s"`
+  - [ ] `timestamp()` constructor — parse RFC 3339 strings
+  - [ ] Arithmetic: `timestamp - timestamp → duration`,
+        `timestamp + duration → timestamp`, `timestamp - duration → timestamp`,
+        `duration + duration → duration`, `duration * int → duration`
+  - [ ] Comparison: `<`, `<=`, `>`, `>=`, `==`, `!=` for both types
+  - [ ] Accessor methods: `.getHours()`, `.getMinutes()`, `.getSeconds()`,
+        `.getFullYear()`, `.getMonth()`, `.getDayOfYear()`, etc.
+  - [ ] `string()` cast support for both types
 
 - [ ] **README with examples** — Usage documentation, API examples,
       quick-start guide. Can't ship a library without docs.
