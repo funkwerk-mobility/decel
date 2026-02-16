@@ -3,6 +3,8 @@
  +/
 module decel.value;
 
+import core.time : Duration;
+import std.datetime.systime : SysTime;
 import std.sumtype;
 
 /// Lazy value resolution. Subclass to provide deferred/lazy field access.
@@ -28,6 +30,8 @@ struct Value
         list,
         map,
         entry,
+        duration,
+        timestamp,
         err,
     }
 
@@ -41,6 +45,8 @@ struct Value
             Value[], // list
             Value[string], // map (string-keyed)
             Entry, // entry (lazy)
+            Duration, // duration
+            SysTime, // timestamp
             Err, // err
             );
 
@@ -85,7 +91,8 @@ struct Value
                 (ref ulong _) => Type.uint_, (ref double _) => Type.double_,
                 (ref string _) => Type.string_, (ref immutable(ubyte)[] _) => Type.bytes_,
                 (ref Value[] _) => Type.list, (ref Value[string] _) => Type.map,
-                (ref Entry _) => Type.entry, (ref Err _) => Type.err,);
+                (ref Entry _) => Type.entry, (ref Duration _) => Type.duration,
+                (ref SysTime _) => Type.timestamp, (ref Err _) => Type.err,);
     }
 
     /// Deep equality comparison for Values.
@@ -193,6 +200,20 @@ private bool valueEquals(const Value a, const Value b)
         return true;
     }
 
+    if (ta == Value.Type.duration && tb == Value.Type.duration)
+    {
+        auto da = ma.inner.match!((ref Duration v) => v, (ref _) => Duration.zero);
+        auto db = mb.inner.match!((ref Duration v) => v, (ref _) => Duration.zero);
+        return da == db;
+    }
+
+    if (ta == Value.Type.timestamp && tb == Value.Type.timestamp)
+    {
+        auto sa = ma.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
+        auto sb = mb.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
+        return sa == sb;
+    }
+
     return false;
 }
 
@@ -214,6 +235,14 @@ unittest
     value("hello").type.should.be(Value.Type.string_);
     Value.null_().type.should.be(Value.Type.null_);
     Value.err("oops").type.should.be(Value.Type.err);
+
+    import core.time : seconds;
+
+    value(30.seconds).type.should.be(Value.Type.duration);
+
+    import std.datetime.systime : SysTime, Clock;
+
+    value(Clock.currTime()).type.should.be(Value.Type.timestamp);
 }
 
 @("Value: deep equality")

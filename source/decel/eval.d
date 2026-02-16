@@ -21,7 +21,10 @@ import decel.env;
 import decel.lexer;
 import decel.value;
 
+import core.time : Duration, hours, minutes, seconds, hnsecs, dur;
 import std.conv : to, ConvException;
+import std.datetime.systime : SysTime;
+import std.datetime.timezone : UTC;
 import std.sumtype : match;
 import std.typecons : Nullable, nullable;
 
@@ -559,6 +562,18 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
             return crossNumericOp(ri.get, lu.get, op, true); // swapped
     }
 
+    // Duration binary ops: duration ± duration, duration comparison
+    {
+        auto ldur = tryGet!Duration(lhs);
+        auto rdur = tryGet!Duration(rhs);
+        if (!ldur.isNull && !rdur.isNull)
+            return evalDurationBinary(ldur.get, rdur.get, op);
+    }
+
+    // Timestamp binary ops: ts - ts, ts ± dur, dur + ts, ts comparison
+    if (lhs.type == Value.Type.timestamp || rhs.type == Value.Type.timestamp)
+        return evalTimestampBinary(op, lhs, rhs);
+
     // Double (with int/uint promotion)
     auto ld = toDouble(lhs);
     auto rd = toDouble(rhs);
@@ -760,6 +775,14 @@ private Value evalFunction(string name, Value[] args, size_t pos)
         if (args.length != 1)
             throw new EvalException("string() takes exactly 1 argument", pos);
         return evalStringCast(args[0]);
+    case "duration":
+        if (args.length != 1)
+            throw new EvalException("duration() takes exactly 1 argument", pos);
+        return evalDurationCast(args[0]);
+    case "timestamp":
+        if (args.length != 1)
+            throw new EvalException("timestamp() takes exactly 1 argument", pos);
+        return evalTimestampCast(args[0]);
     default:
         throw new EvalException("unknown function: " ~ name, pos);
     }
@@ -793,8 +816,20 @@ private Value evalMethod(Value obj, string name, Value[] args)
             return Value.err(".matches() takes exactly 1 argument");
         return evalMatches(obj, args[0]);
     default:
-        return Value.err("unknown method: " ~ name);
+        break;
     }
+
+    // Duration accessor methods
+    auto durVal = tryGet!Duration(obj);
+    if (!durVal.isNull)
+        return evalDurationMethod(durVal.get, name, args);
+
+    // Timestamp accessor methods
+    auto tsVal = tryGet!SysTime(obj);
+    if (!tsVal.isNull)
+        return evalTimestampMethod(tsVal.get, name, args);
+
+    return Value.err("unknown method: " ~ name);
 }
 
 // ── Built-in function implementations ───────────────────────────────
@@ -983,7 +1018,180 @@ private Value evalStringCast(Value v)
     auto b = tryGet!bool(v);
     if (!b.isNull)
         return Value(b.get ? "true" : "false");
+    auto dur = tryGet!Duration(v);
+    if (!dur.isNull)
+        return Value(formatISO8601Duration(dur.get));
+    auto ts = tryGet!SysTime(v);
+    if (!ts.isNull)
+        return Value(formatRFC3339(ts.get));
     return Value.err("cannot convert " ~ typeName(v) ~ " to string");
+}
+
+// ── Duration / Timestamp evaluation ─────────────────────────────────
+
+private Value evalDurationCast(Value v)
+{
+    if (isErr(v))
+        return v;
+    auto d = tryGet!Duration(v);
+    if (!d.isNull)
+        return Value(d.get);
+    auto s = tryGet!string(v);
+    if (!s.isNull)
+    {
+        auto parsed = parseISO8601Duration(s.get);
+        if (parsed.isNull)
+            return Value.err("invalid duration string: " ~ s.get);
+        return Value(parsed.get);
+    }
+    return Value.err("cannot convert " ~ typeName(v) ~ " to duration");
+}
+
+private Value evalTimestampCast(Value v)
+{
+    if (isErr(v))
+        return v;
+    auto t = tryGet!SysTime(v);
+    if (!t.isNull)
+        return Value(t.get);
+    auto s = tryGet!string(v);
+    if (!s.isNull)
+    {
+        auto parsed = parseRFC3339(s.get);
+        if (parsed.isNull)
+            return Value.err("invalid timestamp string: " ~ s.get);
+        return Value(parsed.get);
+    }
+    return Value.err("cannot convert " ~ typeName(v) ~ " to timestamp");
+}
+
+/// Duration binary operations: duration ± duration, duration == duration, duration <=> duration.
+private Value evalDurationBinary(Duration ld, Duration rd, Token.Kind op)
+{
+    switch (op)
+    {
+    case Token.Kind.plus:
+        return Value(ld + rd);
+    case Token.Kind.minus:
+        return Value(ld - rd);
+    case Token.Kind.eqEq:
+        return Value(ld == rd);
+    case Token.Kind.bangEq:
+        return Value(ld != rd);
+    case Token.Kind.lt:
+        return Value(ld < rd);
+    case Token.Kind.ltEq:
+        return Value(ld <= rd);
+    case Token.Kind.gt:
+        return Value(ld > rd);
+    case Token.Kind.gtEq:
+        return Value(ld >= rd);
+    default:
+        return Value.err("unsupported operator " ~ kindName(op) ~ " for duration");
+    }
+}
+
+/// Timestamp binary operations: ts - ts → duration, ts ± duration → ts, ts <=> ts.
+private Value evalTimestampBinary(Token.Kind op, Value lhs, Value rhs)
+{
+    auto lt = tryGet!SysTime(lhs);
+    auto rt = tryGet!SysTime(rhs);
+
+    // timestamp - timestamp → duration
+    if (!lt.isNull && !rt.isNull)
+    {
+        switch (op)
+        {
+        case Token.Kind.minus:
+            return Value(lt.get - rt.get);
+        case Token.Kind.eqEq:
+            return Value(lt.get == rt.get);
+        case Token.Kind.bangEq:
+            return Value(lt.get != rt.get);
+        case Token.Kind.lt:
+            return Value(lt.get < rt.get);
+        case Token.Kind.ltEq:
+            return Value(lt.get <= rt.get);
+        case Token.Kind.gt:
+            return Value(lt.get > rt.get);
+        case Token.Kind.gtEq:
+            return Value(lt.get >= rt.get);
+        default:
+            return Value.err("unsupported operator " ~ kindName(op) ~ " for timestamps");
+        }
+    }
+
+    // timestamp ± duration → timestamp
+    if (!lt.isNull)
+    {
+        auto rd = tryGet!Duration(rhs);
+        if (!rd.isNull)
+        {
+            if (op == Token.Kind.plus)
+                return Value(lt.get + rd.get);
+            if (op == Token.Kind.minus)
+                return Value(lt.get - rd.get);
+            return Value.err("unsupported operator " ~ kindName(op) ~ " for timestamp and duration");
+        }
+    }
+
+    // duration + timestamp → timestamp
+    auto ld = tryGet!Duration(lhs);
+    if (!ld.isNull && !rt.isNull)
+    {
+        if (op == Token.Kind.plus)
+            return Value(rt.get + ld.get);
+        return Value.err("unsupported operator " ~ kindName(op) ~ " for duration and timestamp");
+    }
+
+    return Value.err("unsupported operand types for " ~ kindName(op));
+}
+
+/// Duration accessor methods.
+private Value evalDurationMethod(Duration d, string name, Value[] args)
+{
+    if (args.length != 0)
+        return Value.err("." ~ name ~ "() takes no arguments");
+    switch (name)
+    {
+    case "hours":
+        return Value(d.total!"hours");
+    case "minutes":
+        return Value(d.total!"minutes");
+    case "seconds":
+        return Value(d.total!"seconds");
+    default:
+        return Value.err("unknown duration method: " ~ name);
+    }
+}
+
+/// Timestamp accessor methods.
+private Value evalTimestampMethod(SysTime st, string name, Value[] args)
+{
+    if (args.length != 0)
+        return Value.err("." ~ name ~ "() takes no arguments");
+    auto utc = st.toUTC();
+    switch (name)
+    {
+    case "year":
+        return Value(cast(long) utc.year);
+    case "month":
+        return Value(cast(long) cast(int) utc.month);
+    case "day":
+        return Value(cast(long) utc.day);
+    case "hour":
+        return Value(cast(long) utc.hour);
+    case "minute":
+        return Value(cast(long) utc.minute);
+    case "second":
+        return Value(cast(long) utc.second);
+    case "dayOfWeek":
+        return Value(cast(long) cast(int) utc.dayOfWeek);
+    case "dayOfYear":
+        return Value(cast(long) utc.dayOfYear);
+    default:
+        return Value.err("unknown timestamp method: " ~ name);
+    }
 }
 
 // ── Macros ──────────────────────────────────────────────────────────
@@ -1309,6 +1517,208 @@ private string processEscapes(string s)
     return cast(string) result;
 }
 
+// ── Duration / Timestamp helpers ────────────────────────────────────
+
+/// Parse an ISO 8601 duration string (e.g., "PT1H30M", "PT30S", "P1DT12H").
+/// Returns null on parse failure.
+private Nullable!Duration parseISO8601Duration(string s)
+{
+    if (s.length < 2 || s[0] != 'P')
+        return Nullable!Duration.init;
+
+    size_t i = 1;
+    long totalHnsecs = 0;
+    bool inTime = false;
+
+    while (i < s.length)
+    {
+        if (s[i] == 'T')
+        {
+            inTime = true;
+            i++;
+            continue;
+        }
+
+        // Parse number (may be fractional)
+        size_t numStart = i;
+        bool hasDot = false;
+        while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] == '.'))
+        {
+            if (s[i] == '.')
+                hasDot = true;
+            i++;
+        }
+        if (i >= s.length || i == numStart)
+            return Nullable!Duration.init;
+
+        char designator = s[i];
+        i++;
+
+        if (hasDot)
+        {
+            // Fractional — only makes sense for the last component (usually S)
+            double val;
+            try
+                val = s[numStart .. i - 1].to!double;
+            catch (ConvException)
+                return Nullable!Duration.init;
+
+            if (inTime && designator == 'S')
+                totalHnsecs += cast(long)(val * 10_000_000);
+            else if (inTime && designator == 'M')
+                totalHnsecs += cast(long)(val * 60 * 10_000_000);
+            else if (inTime && designator == 'H')
+                totalHnsecs += cast(long)(val * 3600 * 10_000_000);
+            else
+                return Nullable!Duration.init;
+        }
+        else
+        {
+            long val;
+            try
+                val = s[numStart .. i - 1].to!long;
+            catch (ConvException)
+                return Nullable!Duration.init;
+
+            if (!inTime && designator == 'D')
+                totalHnsecs += val * 86_400 * 10_000_000;
+            else if (inTime && designator == 'H')
+                totalHnsecs += val * 3_600 * 10_000_000;
+            else if (inTime && designator == 'M')
+                totalHnsecs += val * 60 * 10_000_000;
+            else if (inTime && designator == 'S')
+                totalHnsecs += val * 10_000_000;
+            else
+                return Nullable!Duration.init;
+        }
+    }
+
+    return nullable(dur!"hnsecs"(totalHnsecs));
+}
+
+/// Parse an RFC 3339 timestamp string (e.g., "2023-01-15T12:30:00Z").
+/// Returns null on parse failure.
+private Nullable!SysTime parseRFC3339(string s)
+{
+    import std.datetime.date : DateTime;
+
+    try
+    {
+        // Minimal RFC 3339: YYYY-MM-DDThh:mm:ssZ or with offset
+        if (s.length < 20)
+            return Nullable!SysTime.init;
+
+        int year = s[0 .. 4].to!int;
+        if (s[4] != '-')
+            return Nullable!SysTime.init;
+        int month = s[5 .. 7].to!int;
+        if (s[7] != '-')
+            return Nullable!SysTime.init;
+        int day = s[8 .. 10].to!int;
+        if (s[10] != 'T' && s[10] != 't')
+            return Nullable!SysTime.init;
+        int hour = s[11 .. 13].to!int;
+        if (s[13] != ':')
+            return Nullable!SysTime.init;
+        int minute = s[14 .. 16].to!int;
+        if (s[16] != ':')
+            return Nullable!SysTime.init;
+        int second = s[17 .. 19].to!int;
+
+        // Parse optional fractional seconds
+        long fracHnsecs = 0;
+        size_t i = 19;
+        if (i < s.length && s[i] == '.')
+        {
+            i++;
+            size_t fracStart = i;
+            while (i < s.length && s[i] >= '0' && s[i] <= '9')
+                i++;
+            string fracStr = s[fracStart .. i];
+            // Pad or truncate to 7 digits (hnsecs)
+            while (fracStr.length < 7)
+                fracStr ~= '0';
+            if (fracStr.length > 7)
+                fracStr = fracStr[0 .. 7];
+            fracHnsecs = fracStr.to!long;
+        }
+
+        // Parse timezone: Z, +HH:MM, or -HH:MM
+        import std.datetime.timezone : SimpleTimeZone;
+
+        if (i >= s.length)
+            return Nullable!SysTime.init;
+
+        Duration tzOffset;
+        if (s[i] == 'Z' || s[i] == 'z')
+        {
+            tzOffset = Duration.zero;
+        }
+        else if (s[i] == '+' || s[i] == '-')
+        {
+            if (i + 5 > s.length)
+                return Nullable!SysTime.init;
+            int tzHour = s[i + 1 .. i + 3].to!int;
+            int tzMin = s[i + 4 .. i + 6].to!int;
+            tzOffset = dur!"hours"(tzHour) + dur!"minutes"(tzMin);
+            if (s[i] == '-')
+                tzOffset = -tzOffset;
+        }
+        else
+        {
+            return Nullable!SysTime.init;
+        }
+
+        auto tz = cast(immutable) new SimpleTimeZone(tzOffset);
+
+        import std.datetime.date : Month;
+
+        auto dt = DateTime(year, cast(Month) month, day, hour, minute, second);
+        auto st = SysTime(dt, dur!"hnsecs"(fracHnsecs), tz);
+        return nullable(st);
+    }
+    catch (Exception)
+    {
+        return Nullable!SysTime.init;
+    }
+}
+
+/// Format a Duration as an ISO 8601 duration string (e.g., "PT1H30M15S").
+private string formatISO8601Duration(Duration d)
+{
+    import std.format : format;
+
+    long totalSecs = d.total!"seconds";
+    bool negative = totalSecs < 0;
+    if (negative)
+        totalSecs = -totalSecs;
+    long rem = totalSecs;
+    long h = rem / 3600;
+    rem %= 3600;
+    long m = rem / 60;
+    long s = rem % 60;
+
+    string result = negative ? "-PT" : "PT";
+    if (h > 0)
+        result ~= format!"%dH"(h);
+    if (m > 0)
+        result ~= format!"%dM"(m);
+    // Always show seconds if nothing else, or if non-zero
+    if (s > 0 || (h == 0 && m == 0))
+        result ~= format!"%dS"(s);
+    return result;
+}
+
+/// Format a SysTime as an RFC 3339 timestamp string.
+private string formatRFC3339(SysTime st)
+{
+    import std.format : format;
+
+    auto utc = st.toUTC();
+    return format!"%04d-%02d-%02dT%02d:%02d:%02dZ"(utc.year,
+            cast(int) utc.month, utc.day, utc.hour, utc.minute, utc.second);
+}
+
 // ── Value helpers ───────────────────────────────────────────────────
 
 private Nullable!T tryGet(T)(Value v)
@@ -1367,6 +1777,10 @@ private string typeName(Value v)
         return "map";
     case Value.Type.entry:
         return "entry";
+    case Value.Type.duration:
+        return "google.protobuf.Duration";
+    case Value.Type.timestamp:
+        return "google.protobuf.Timestamp";
     case Value.Type.err:
         return "error";
     }
@@ -1800,4 +2214,149 @@ unittest
     evaluate("1.0 == 1u", emptyContext()).should.be(value(true));
     evaluate("1 + 1.5", emptyContext()).should.be(value(2.5));
     evaluate("1u + 1.5", emptyContext()).should.be(value(2.5));
+}
+
+@("Eval: duration constructor and methods")
+unittest
+{
+    import dshould;
+
+    // Parse ISO 8601 durations
+    evaluate(`duration("PT30S")`, emptyContext()).type.should.be(Value.Type.duration);
+    evaluate(`duration("PT1H30M")`, emptyContext()).type.should.be(Value.Type.duration);
+    evaluate(`duration("PT1H")`, emptyContext()).type.should.be(Value.Type.duration);
+    evaluate(`duration("P1DT12H")`, emptyContext()).type.should.be(Value.Type.duration);
+
+    // Accessor methods
+    evaluate(`duration("PT1H30M").hours()`, emptyContext()).should.be(value(1L));
+    evaluate(`duration("PT1H30M").minutes()`, emptyContext()).should.be(value(90L));
+    evaluate(`duration("PT1H30M").seconds()`, emptyContext()).should.be(value(5400L));
+    evaluate(`duration("PT90S").minutes()`, emptyContext()).should.be(value(1L));
+    evaluate(`duration("PT90S").seconds()`, emptyContext()).should.be(value(90L));
+
+    // Invalid duration → error
+    evaluate(`duration("not a duration")`, emptyContext()).type.should.be(Value.Type.err);
+    evaluate(`duration(42)`, emptyContext()).type.should.be(Value.Type.err);
+}
+
+@("Eval: duration arithmetic")
+unittest
+{
+    import dshould;
+
+    // duration + duration
+    evaluate(`duration("PT1H") + duration("PT30M")`, emptyContext()).should.be(
+            evaluate(`duration("PT1H30M")`, emptyContext()));
+
+    // duration - duration
+    evaluate(`duration("PT1H") - duration("PT30M")`, emptyContext()).should.be(
+            evaluate(`duration("PT30M")`, emptyContext()));
+
+    // duration comparison
+    evaluate(`duration("PT1H") > duration("PT30M")`, emptyContext()).should.be(value(true));
+    evaluate(`duration("PT1H") < duration("PT30M")`, emptyContext()).should.be(value(false));
+    evaluate(`duration("PT1H") == duration("PT1H")`, emptyContext()).should.be(value(true));
+    evaluate(`duration("PT1H") != duration("PT30M")`, emptyContext()).should.be(value(true));
+    evaluate(`duration("PT1H") >= duration("PT1H")`, emptyContext()).should.be(value(true));
+    evaluate(`duration("PT30M") <= duration("PT1H")`, emptyContext()).should.be(value(true));
+}
+
+@("Eval: timestamp constructor and methods")
+unittest
+{
+    import dshould;
+
+    // Parse RFC 3339 timestamps
+    evaluate(`timestamp("2023-01-15T12:30:00Z")`, emptyContext()).type.should.be(
+            Value.Type.timestamp);
+
+    // Accessor methods
+    evaluate(`timestamp("2023-01-15T12:30:45Z").year()`, emptyContext()).should.be(value(2023L));
+    evaluate(`timestamp("2023-01-15T12:30:45Z").month()`, emptyContext()).should.be(value(1L));
+    evaluate(`timestamp("2023-01-15T12:30:45Z").day()`, emptyContext()).should.be(value(15L));
+    evaluate(`timestamp("2023-01-15T12:30:45Z").hour()`, emptyContext()).should.be(value(12L));
+    evaluate(`timestamp("2023-01-15T12:30:45Z").minute()`, emptyContext()).should.be(value(30L));
+    evaluate(`timestamp("2023-01-15T12:30:45Z").second()`, emptyContext()).should.be(value(45L));
+
+    // Invalid timestamp → error
+    evaluate(`timestamp("not a timestamp")`, emptyContext()).type.should.be(Value.Type.err);
+    evaluate(`timestamp(42)`, emptyContext()).type.should.be(Value.Type.err);
+}
+
+@("Eval: timestamp arithmetic")
+unittest
+{
+    import dshould;
+
+    // timestamp + duration
+    evaluate(`timestamp("2023-01-15T12:00:00Z") + duration("PT1H")`, emptyContext()).should.be(
+            evaluate(`timestamp("2023-01-15T13:00:00Z")`, emptyContext()));
+
+    // timestamp - duration
+    evaluate(`timestamp("2023-01-15T12:00:00Z") - duration("PT1H")`, emptyContext()).should.be(
+            evaluate(`timestamp("2023-01-15T11:00:00Z")`, emptyContext()));
+
+    // duration + timestamp (commutative)
+    evaluate(`duration("PT1H") + timestamp("2023-01-15T12:00:00Z")`, emptyContext()).should.be(
+            evaluate(`timestamp("2023-01-15T13:00:00Z")`, emptyContext()));
+
+    // timestamp comparison
+    evaluate(`timestamp("2023-01-15T12:00:00Z") < timestamp("2023-01-15T13:00:00Z")`,
+            emptyContext()).should.be(value(true));
+    evaluate(`timestamp("2023-01-15T12:00:00Z") == timestamp("2023-01-15T12:00:00Z")`,
+            emptyContext()).should.be(value(true));
+    evaluate(`timestamp("2023-01-15T13:00:00Z") > timestamp("2023-01-15T12:00:00Z")`,
+            emptyContext()).should.be(value(true));
+}
+
+@("Eval: timestamp - timestamp → duration")
+unittest
+{
+    import dshould;
+
+    auto result = evaluate(`timestamp("2023-01-15T13:00:00Z") - timestamp("2023-01-15T12:00:00Z")`,
+            emptyContext());
+    result.type.should.be(Value.Type.duration);
+    // The resulting duration should be 1 hour
+    evaluate(`(timestamp("2023-01-15T13:00:00Z") - timestamp("2023-01-15T12:00:00Z")).seconds()`,
+            emptyContext()).should.be(value(3600L));
+}
+
+@("Eval: duration and timestamp string() cast")
+unittest
+{
+    import dshould;
+
+    evaluate(`string(duration("PT1H30M"))`, emptyContext()).should.be(value("PT1H30M"));
+    evaluate(`string(duration("PT30S"))`, emptyContext()).should.be(value("PT30S"));
+    evaluate(`string(timestamp("2023-01-15T12:30:00Z"))`, emptyContext()).should.be(
+            value("2023-01-15T12:30:00Z"));
+}
+
+@("Eval: type() for duration and timestamp")
+unittest
+{
+    import dshould;
+
+    evaluate(`type(duration("PT1H"))`, emptyContext()).should.be(value("google.protobuf.Duration"));
+    evaluate(`type(timestamp("2023-01-15T12:00:00Z"))`, emptyContext()).should.be(
+            value("google.protobuf.Timestamp"));
+}
+
+@("Eval: duration/timestamp from context")
+unittest
+{
+    import dshould;
+    import core.time : hours, minutes;
+    import std.datetime.systime : SysTime;
+    import std.datetime.date : DateTime;
+    import std.datetime.timezone : UTC;
+
+    auto ctx = contextFrom([
+        "timeout": value(dur!"seconds"(30)),
+        "created": value(SysTime(DateTime(2023, 1, 15, 12, 0, 0), UTC())),
+    ]);
+    evaluate("timeout.seconds()", ctx).should.be(value(30L));
+    evaluate("created.year()", ctx).should.be(value(2023L));
+    evaluate(`created + duration("PT1H")`, ctx).type.should.be(Value.Type.timestamp);
 }
