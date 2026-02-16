@@ -37,4 +37,4 @@ public import decel.env : Env, Macro, MethodMacro, TokenRange;
 public import decel.lexer : Token;
 
 // Parser (needed for custom macros that parse arguments)
-public import decel.eval : parseExpr;
+public import decel.eval : parseExpr, parseArgList;

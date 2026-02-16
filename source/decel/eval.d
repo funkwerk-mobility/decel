@@ -109,11 +109,21 @@ Value parseExpr(ref TokenRange r, const Env env, Context ctx, int minPrec)
             if (r.peek().kind == Token.Kind.lparen)
             {
                 r.advance();
-                // Check method macros first
+                // Check global method macros first
                 if (auto mm = ident.text in env.methodMacros)
                 {
                     lhs = (*mm)(lhs, r, env, ctx);
                     continue;
+                }
+                // Check Entry-level method macros
+                auto entryMM = tryGet!Entry(lhs);
+                if (!entryMM.isNull)
+                {
+                    if (auto emm = entryMM.get.methodMacro(ident.text))
+                    {
+                        lhs = emm(lhs, r, env, ctx);
+                        continue;
+                    }
                 }
                 auto args = parseArgList(r, env, ctx);
                 r.expect(Token.Kind.rparen);
@@ -288,7 +298,7 @@ private Value parseTernary(ref TokenRange r, const Env env, Context ctx, Value c
 }
 
 /// Parse a comma-separated argument list (without consuming parens).
-private Value[] parseArgList(ref TokenRange r, const Env env, Context ctx)
+Value[] parseArgList(ref TokenRange r, const Env env, Context ctx)
 {
     Value[] args;
     if (r.peek().kind == Token.Kind.rparen)
@@ -2582,6 +2592,121 @@ unittest
     evaluate(`gauge < 50.0`, ctx).should.be(value(true));
     evaluate(`gauge == 42.5`, ctx).should.be(value(true));
     evaluate(`-gauge`, ctx).should.be(value(-42.5));
+}
+
+@("Eval: Entry.methodMacro() — entry-level method macros")
+unittest
+{
+    import dshould;
+
+    // An Entry that defines its own .where() method macro
+    class MetricEntry : Entry
+    {
+        string metricName;
+        Value[] series;
+
+        this(string name, Value[] data)
+        {
+            metricName = name;
+            series = data;
+        }
+
+        override Value resolve(string name)
+        {
+            if (name == "name")
+                return value(metricName);
+            return Value.err("no such field: " ~ name);
+        }
+
+        override List asList()
+        {
+            return new ArrayList(series);
+        }
+
+        override MethodMacro methodMacro(string name)
+        {
+            if (name == "where")
+            {
+                return (Value target, ref TokenRange r, const Env env, Context ctx) {
+                    // Parse a single threshold argument: .where(threshold)
+                    auto args = parseArgList(r, env, ctx);
+                    r.expect(Token.Kind.rparen);
+                    if (args.length != 1)
+                        return Value.err(".where() takes exactly 1 argument");
+                    auto threshold = tryGet!long(args[0]);
+                    if (threshold.isNull)
+                        return Value.err(".where() requires an int argument");
+                    // Filter series > threshold
+                    auto me = cast(MetricEntry) target.get!Entry;
+                    Value[] filtered;
+                    foreach (v; me.series)
+                    {
+                        auto iv = tryGet!long(v);
+                        if (!iv.isNull && iv.get > threshold.get)
+                            filtered ~= v;
+                    }
+                    return Value(cast(Entry) new MetricEntry(me.metricName, filtered));
+                };
+            }
+            return null;
+        }
+    }
+
+    auto entry = new MetricEntry("cpu", [
+        value(10L), value(50L), value(80L), value(30L)
+    ]);
+    auto ctx = contextFrom(["metric": Value(cast(Entry) entry)]);
+
+    // Entry-level method macro: .where(threshold) filters series
+    evaluate(`metric.where(25).name`, ctx).should.be(value("cpu"));
+    evaluate(`size(metric.where(25))`, ctx).should.be(value(3L));
+    evaluate(`size(metric.where(60))`, ctx).should.be(value(1L));
+
+    // Chaining: .where() then comprehension
+    evaluate(`metric.where(25).all(x, x > 25)`, ctx).should.be(value(true));
+    evaluate(`metric.where(0).exists(x, x == 10)`, ctx).should.be(value(true));
+
+    // Original entry still works as a list
+    evaluate(`size(metric)`, ctx).should.be(value(4L));
+    evaluate(`metric.all(x, x > 0)`, ctx).should.be(value(true));
+}
+
+@("Eval: Entry.methodMacro() — non-matching falls through")
+unittest
+{
+    import dshould;
+
+    // An Entry that only defines .custom(), other methods fall through
+    class CustomEntry : Entry
+    {
+        override Value resolve(string name)
+        {
+            if (name == "val")
+                return value("hello");
+            return Value.err("no such field: " ~ name);
+        }
+
+        override MethodMacro methodMacro(string name)
+        {
+            if (name == "custom")
+            {
+                return (Value, ref TokenRange r, const Env env, Context ctx) {
+                    cast(void) parseArgList(r, env, ctx);
+                    r.expect(Token.Kind.rparen);
+                    return value("custom called");
+                };
+            }
+            return null;
+        }
+    }
+
+    auto ctx = contextFrom(["obj": Value(cast(Entry) new CustomEntry())]);
+
+    // Entry-level macro works
+    evaluate(`obj.custom()`, ctx).should.be(value("custom called"));
+
+    // Field access still works
+    evaluate(`obj.val`, ctx).should.be(value("hello"));
 }
 
 @("Eval: Entry with both asList() and asValue()")

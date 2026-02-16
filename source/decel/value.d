@@ -33,6 +33,17 @@ abstract class Entry
     {
         return Nullable!Value.init;
     }
+
+    /// If this entry handles a method-call macro by name, return the handler.
+    /// Called when the evaluator sees `entry.name(...)`. The handler receives
+    /// the token stream and is responsible for parsing arguments and consuming
+    /// the closing `)`. Return null to fall through to normal method dispatch.
+    import decel.env : MethodMacro;
+
+    MethodMacro methodMacro(string)
+    {
+        return null;
+    }
 }
 
 /// Abstract list — supports indexing and size without materializing.

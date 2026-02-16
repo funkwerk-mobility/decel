@@ -340,6 +340,45 @@ Both `asList()` and `asValue()` can be overridden on the same Entry,
 giving you a value that has named fields, acts as a list, and participates
 in arithmetic.
 
+### Entry-Level Method Macros — `methodMacro()`
+
+Override `methodMacro()` to give an Entry its own method-call handlers
+with full access to the token stream. This lets each Entry subclass define
+custom syntax without registering global macros:
+
+```d
+class MetricEntry : Entry
+{
+    string name;
+    double[] values;
+
+    override Value resolve(string field) { /* ... */ }
+    override List asList() { /* ... */ }
+
+    override MethodMacro methodMacro(string name)
+    {
+        if (name == "where")
+        {
+            // Return a handler that parses .where(...) arguments
+            return (Value target, ref TokenRange r, const Env env, Context ctx) {
+                auto args = parseArgList(r, env, ctx);
+                r.expect(Token.Kind.rparen);
+                // ... filter logic, return new MetricEntry ...
+            };
+        }
+        return null;  // fall through to normal method dispatch
+    }
+}
+```
+
+Then in CEL:
+```cel
+metric.where(threshold > 50).all(x, x.healthy)
+```
+
+The evaluator checks Entry-level macros after global method macros but
+before built-in methods. Return `null` to fall through to normal dispatch.
+
 ### Combining Entry and List
 
 For real-world data models, nest Entry and List to expose a complete
