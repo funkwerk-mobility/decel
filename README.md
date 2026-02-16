@@ -213,15 +213,6 @@ All list operations work uniformly on both `ArrayList` and custom `List`
 subclasses: `size()`, `[index]`, `in`, `+` concatenation, and all
 comprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).
 
-`List` also supports D-side `foreach` iteration via `opApply`:
-
-```d
-auto result = evaluate("[1, 2, 3]", emptyContext());
-auto list = result.get!List;
-foreach (elem; list)
-    writeln(elem.get!long);
-```
-
 ## Error Handling
 
 Parse errors (syntax errors, unexpected tokens) throw `EvalException`:

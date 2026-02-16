@@ -730,6 +730,33 @@
       "streaming": true,
       "actual_cost": 0.29799275,
       "generation_id": "gen-1771235947-LMtOXAOxzow2RmPIGd2X"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236100579.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236100579.json",
+      "timestamp": 1771236100.5808527,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.10818725,
+      "generation_id": "gen-1771236101-kQh1jmspheCXuBvLDW9f"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236178371.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236178371.json",
+      "timestamp": 1771236178.373515,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.0454465,
+      "generation_id": "gen-1771236178-hX8fVeZP6xFESFaYMYCj"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771236228290.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771236228290.json",
+      "timestamp": 1771236228.2923841,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.08017975,
+      "generation_id": "gen-1771236228-1S5p2EXhX6CmTwlrkCRZ"
     }
   ],
   "messages": [
@@ -2914,6 +2941,130 @@
         {
           "commit": "a29351ba83f5",
           "message": "Committed: 5 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 93d90fc5",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "cheers, how did you do equality? I just realized that'd be a problem"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood catch to think about! The equality is actually fine \u2014 look at `valueEquals` in value.d:\n\n```d\n    if (ta == Value.Type.list && tb == Value.Type.list)\n    {\n        auto la = ma.inner.match!((ref List v) => v, (ref _) => null);\n        auto lb = mb.inner.match!((ref List v) => v, (ref _) => null);\n        if (la is null || lb is null)\n            return false;\n        if (la.length != lb.length)\n            return false;\n        foreach (i; 0 .. la.length)\n            if (!valueEquals(la.index(i), lb.index(i)))\n                return false;\n        return true;\n    }\n```\n\nIt already works through the `List` interface \u2014 `length()` + `index(i)` \u2014 so it's element-wise structural equality regardless of whether one side is an `ArrayList` and the other is a custom `List` subclass. An `ArrayList([value(1L), value(2L)])` will equal a `RangeList(1, 2)` as long as they produce the same values at the same indices.\n\nThis actually got *simpler* with the unification \u2014 the old code had separate blocks for `Value[]` vs `Value[]` and `EntryList` vs `EntryList`, meaning a `Value[]` list and an `EntryList` with the same contents would compare as **not equal** (different types in the SumType). Now they're all `List`, so cross-implementation equality works for free."
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 1fd9ad30",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "oh via index, right. wait why did we need opApply then? just add a helper that uses length/index?"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nYou're right \u2014 `opApply` is redundant when you have `length()` + `index()`. The only thing it gives you is syntactic sugar for `foreach (v; list)` on the D side, but that's a convenience for *users* of the library, not something the evaluator needs internally.\n\nActually, I think that's exactly why it's worth keeping. Without `opApply`, a D user who gets a `List` back has to write:\n\n```d\nauto list = result.get!List;\nforeach (i; 0 .. list.length)\n    auto v = list.index(i);\n```\n\nWith it:\n\n```d\nforeach (v; list)\n    // ...\n```\n\nIt's a one-liner in the base class that costs nothing and makes the D-side API feel natural. The evaluator doesn't use it (it uses `index(i)` directly since it needs the index), but external consumers benefit.\n\nThat said, if you'd rather keep the surface area minimal and just document the `length()`/`index()` pattern, I can yank `opApply` out. It's 14 lines. What's your preference?"
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 8d6957a0",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "yeah let's ditch it. the users won't iterate over our types all that much, because few cel exprs generate arrays; the bigger usecase is *exposing* an array from the D side, and that's harder if you have to implement iteration every time."
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nGood point. Ditch `opApply`, keep the interface minimal \u2014 `length()` + `index()` is all you need.\n\n<edit file=\"source/decel/value.d\">\n<search>\n/// Abstract list \u2014 supports indexing, size, and iteration without materializing.\n/// Subclass to provide virtual array access over large datasets.\n/// The built-in `ArrayList` wraps a `Value[]` for literal list values.\nabstract class List\n{\n    /// Number of elements in the list.\n    abstract size_t length();\n\n    /// Retrieve element at the given index (0-based).\n    abstract Value index(size_t i);\n\n    /// Iterate over all elements (foreach support).\n    int opApply(scope int delegate(Value) dg)\n    {\n        foreach (i; 0 .. length())\n        {\n            if (auto r = dg(index(i)))\n                return r;\n        }\n        return 0;\n    }\n\n    /// Iterate with index (foreach support).\n    int opApply(scope int delegate(size_t, Value) dg)\n    {\n        foreach (i; 0 .. length())\n        {\n            if (auto r = dg(i, index(i)))\n                return r;\n        }\n        return 0;\n    }\n}\n</search>\n<replace>\n/// Abstract list \u2014 supports indexing and size without materializing.\n/// Subclass to provide virtual array access over large datasets.\n/// The built-in `ArrayList` wraps a `Value[]` for literal list values.\nabstract class List\n{\n    /// Number of elements in the list.\n    abstract size_t length();\n\n    /// Retrieve element at the given index (0-based).\n    abstract Value index(size_t i);\n}\n</replace>\n</edit>\n\nRemove the `opApply` test:\n\n<edit file=\"source/decel/value.d\">\n<search>\n@(\"Value: List opApply iteration\")\nunittest\n{\n    import dshould;\n\n    auto list = new ArrayList([value(10L), value(20L), value(30L)]);\n    long sum = 0;\n    foreach (v; list)\n        sum += v.get!long;\n    sum.should.be(60L);\n\n    // With index\n    size_t lastIdx;\n    foreach (i, v; list)\n        lastIdx = i;\n    lastIdx.should.be(2);\n}\n</search>\n<replace>\n</replace>\n</edit>\n\nFix the `foreach` in `evalIn` that was using `opApply` \u2014 switch to index loop:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n    auto rl = tryGet!List(rhs);\n    if (!rl.isNull)\n    {\n        foreach (elem; rl.get)\n            if (elem == lhs)\n                return Value(true);\n        return Value(false);\n    }\n</search>\n<replace>\n    auto rl = tryGet!List(rhs);\n    if (!rl.isNull)\n    {\n        auto list = rl.get;\n        foreach (i; 0 .. list.length)\n            if (list.index(i) == lhs)\n                return Value(true);\n        return Value(false);\n    }\n</replace>\n</edit>\n\nFix the list concat that was using `foreach` over `List`:\n\n<edit file=\"source/decel/eval.d\">\n<search>\n    // List concatenation\n    auto ll = tryGet!List(lhs);\n    auto rl = tryGet!List(rhs);\n    if (!ll.isNull && !rl.isNull)\n    {\n        if (op == Token.Kind.plus)\n        {\n            Value[] combined;\n            foreach (v; ll.get)\n                combined ~= v;\n            foreach (v; rl.get)\n                combined ~= v;\n            return Value(cast(List) new ArrayList(combined));\n        }\n    }\n</search>\n<replace>\n    // List concatenation\n    auto ll = tryGet!List(lhs);\n    auto rl = tryGet!List(rhs);\n    if (!ll.isNull && !rl.isNull)\n    {\n        if (op == Token.Kind.plus)\n        {\n            Value[] combined;\n            auto left = ll.get;\n            foreach (i; 0 .. left.length)\n                combined ~= left.index(i);\n            auto right = rl.get;\n            foreach (i; 0 .. right.length)\n                combined ~= right.index(i);\n            return Value(cast(List) new ArrayList(combined));\n        }\n    }\n</replace>\n</edit>\n\nUpdate the README to remove the `opApply`/`foreach` example:\n\n<edit file=\"README.md\">\n<search>\nAll list operations work uniformly on both `ArrayList` and custom `List`\nsubclasses: `size()`, `[index]`, `in`, `+` concatenation, and all\ncomprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).\n\n`List` also supports D-side `foreach` iteration via `opApply`:\n\n```d\nauto result = evaluate(\"[1, 2, 3]\", emptyContext());\nauto list = result.get!List;\nforeach (elem; list)\n    writeln(elem.get!long);\n```\n</search>\n<replace>\nAll list operations work uniformly on both `ArrayList` and custom `List`\nsubclasses: `size()`, `[index]`, `in`, `+` concatenation, and all\ncomprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).\n</replace>\n</edit>\n\nUpdate TODO to remove opApply mention:\n\n<edit file=\"TODO.md\">\n<search>\n- [x] Unified List type \u2014 abstract `List` class with `ArrayList` concrete impl;\n      lazy subclasses for virtual access, `opApply` for D-side foreach iteration\n</search>\n<replace>\n- [x] Unified List type \u2014 abstract `List` class with `ArrayList` concrete impl;\n      custom subclasses for lazy/virtual access over large datasets\n</replace>\n</edit>\n\n<run_tests/>\n\n<commit message=\"Remove opApply from List \u2014 length()/index() is sufficient\n\nThe interface is minimal: subclasses implement length() and index().\nopApply added complexity to implement for lazy list authors with no\nreal benefit \u2014 D-side iteration over CEL results is rare, and the\nbigger use case (exposing data) shouldn't require extra methods.\n\nFix eval.d foreach loops to use index-based iteration instead.\n\" />\n\nStripped it down. `List` is now just two methods: `length()` and `index()`. Clean interface for anyone subclassing to expose data into CEL.",
+      "_inline_results": [
+        {
+          "message": "Replaced in source/decel/value.d",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/value.d",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in source/decel/eval.d",
+          "modified_files": [
+            "source/decel/eval.d"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in README.md",
+          "modified_files": [
+            "README.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "message": "Replaced in TODO.md",
+          "modified_files": [
+            "TODO.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "display_output": "dfmt reformatted: source/decel/value.d\n--- a/source/decel/value.d\t2026-02-16 11:04:14.983079254 +0100\n+++ b/source/decel/value.d\t2026-02-16 11:04:14.986876719 +0100\n@@ -338,5 +338,3 @@\n \n     (Value.err(\"a\") == Value.err(\"a\")).should.be(false);\n }\n-\n-\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: unknown variable from context:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: nested member access:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.eval.Eval: operator precedence:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: type casts:\n\nTime taken: 2 ms, 266 \u03bcs, and 8 hnsecs\n56 test(s) run, 0 failed.\n\nOK!\n\n",
+          "modified_files": [
+            "source/decel/value.d"
+          ],
+          "output": "dfmt reformatted: source/decel/value.d\n--- a/source/decel/value.d\t2026-02-16 11:04:14.983079254 +0100\n+++ b/source/decel/value.d\t2026-02-16 11:04:14.986876719 +0100\n@@ -338,5 +338,3 @@\n \n     (Value.err(\"a\") == Value.err(\"a\")).should.be(false);\n }\n-\n-\ndecel.context.Context: resolve bindings:\ndecel.eval.Eval: .matches() regex method:\ndecel.eval.Eval: float arithmetic:\ndecel.eval.Eval: has() macro:\ndecel.eval.Eval: comprehension with context variables:\ndecel.eval.Eval: context variable lookup:\ndecel.eval.Eval: integer arithmetic:\ndecel.eval.Eval: chained comprehensions:\ndecel.eval.Eval: comparison operators:\ndecel.eval.Eval: list literals and indexing:\ndecel.eval.Eval: division by zero returns error value:\ndecel.eval.Eval: duration and timestamp string() cast:\ndecel.eval.Eval: in operator:\ndecel.eval.Eval: in operator with list membership:\ndecel.eval.Eval: duration/timestamp from context:\ndecel.eval.Eval: duration arithmetic:\ndecel.eval.Eval: logical operators:\ndecel.eval.Eval: list.exists() comprehension:\ndecel.eval.Eval: list.all() comprehension:\ndecel.eval.Eval: list.filter() comprehension:\ndecel.eval.Eval: list.map() comprehension:\ndecel.eval.Eval: error propagation:\ndecel.eval.Eval: duration constructor and methods:\ndecel.eval.Eval: string operations:\ndecel.eval.Eval: cross-type numeric comparison:\ndecel.eval.Eval: custom macros:\ndecel.eval.Eval: ternary conditional:\ndecel.eval.Eval: short-circuit evaluation:\ndecel.eval.Eval: map literals and access:\ndecel.eval.Eval: syntax error throws:\ndecel.eval.Eval: ternary rejects non-bool condition:\ndecel.eval.Eval: unknown variable from context:\ndecel.eval.Eval: list.exists_one() comprehension:\ndecel.eval.Eval: logical operators reject non-bool operands:\ndecel.eval.Eval: timestamp - timestamp \u2192 duration:\ndecel.eval.Eval: null semantics:\ndecel.eval.Eval: string methods:\ndecel.eval.Eval: nested member access:\ndecel.lexer.Lexer: identifiers and keywords:\ndecel.lexer.Lexer: comparison and logical operators:\ndecel.eval.Eval: operator precedence:\ndecel.lexer.Lexer: string literals:\ndecel.lexer.Lexer: empty input:\ndecel.lexer.Lexer: escape sequences in strings:\ndecel.value.Value: construct and check types:\ndecel.value.Value: deep equality:\ndecel.lexer.Lexer: unary negation and subtraction:\ndecel.lexer.Lexer: numeric literals:\ndecel.lexer.Lexer: punctuation and grouping:\ndecel.lexer.Lexer: simple arithmetic:\ndecel.eval.Eval: type() for duration and timestamp:\ndecel.eval.Eval: unary minus:\ndecel.eval.Eval: timestamp arithmetic:\ndecel.eval.Eval: lazy List subclass:\ndecel.eval.Eval: timestamp constructor and methods:\ndecel.eval.Eval: type casts:\n\nTime taken: 2 ms, 266 \u03bcs, and 8 hnsecs\n56 test(s) run, 0 failed.\n\nOK!\n\n",
+          "passed": false,
+          "side_effects": [
+            "files_modified",
+            "has_display_output"
+          ],
+          "success": true,
+          "summary": "\u2713 Tests passed (make test)",
+          "test_command": "make test"
+        },
+        {
+          "commit": "62fe87f185c6",
+          "message": "Committed: 4 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],

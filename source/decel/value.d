@@ -15,7 +15,7 @@ abstract class Entry
     Value resolve(string name);
 }
 
-/// Abstract list — supports indexing, size, and iteration without materializing.
+/// Abstract list — supports indexing and size without materializing.
 /// Subclass to provide virtual array access over large datasets.
 /// The built-in `ArrayList` wraps a `Value[]` for literal list values.
 abstract class List
@@ -25,28 +25,6 @@ abstract class List
 
     /// Retrieve element at the given index (0-based).
     abstract Value index(size_t i);
-
-    /// Iterate over all elements (foreach support).
-    int opApply(scope int delegate(Value) dg)
-    {
-        foreach (i; 0 .. length())
-        {
-            if (auto r = dg(index(i)))
-                return r;
-        }
-        return 0;
-    }
-
-    /// Iterate with index (foreach support).
-    int opApply(scope int delegate(size_t, Value) dg)
-    {
-        foreach (i; 0 .. length())
-        {
-            if (auto r = dg(i, index(i)))
-                return r;
-        }
-        return 0;
-    }
 }
 
 /// Concrete list backed by a `Value[]` array.
@@ -359,22 +337,4 @@ unittest
     (value([value(1L), value(2L)]) == value([value(1L), value(3L)])).should.be(false);
 
     (Value.err("a") == Value.err("a")).should.be(false);
-}
-
-@("Value: List opApply iteration")
-unittest
-{
-    import dshould;
-
-    auto list = new ArrayList([value(10L), value(20L), value(30L)]);
-    long sum = 0;
-    foreach (v; list)
-        sum += v.get!long;
-    sum.should.be(60L);
-
-    // With index
-    size_t lastIdx;
-    foreach (i, v; list)
-        lastIdx = i;
-    lastIdx.should.be(2);
 }

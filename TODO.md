@@ -35,7 +35,7 @@
 - [x] Macro system (function-call and method-call macros)
 - [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`
 - [x] Unified List type — abstract `List` class with `ArrayList` concrete impl;
-      lazy subclasses for virtual access, `opApply` for D-side foreach iteration
+      custom subclasses for lazy/virtual access over large datasets
 - [x] `.matches()` regex method — `s.matches(re)` for full-string regex matching
 - [x] Null semantics: `null == null` → true, `null != X` → true, null arithmetic → error
 - [x] Cross-type numeric comparison (`1u == 1`, `-1 < 1u`, `1u + 1`, etc.)

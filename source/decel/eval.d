@@ -630,10 +630,12 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
         if (op == Token.Kind.plus)
         {
             Value[] combined;
-            foreach (v; ll.get)
-                combined ~= v;
-            foreach (v; rl.get)
-                combined ~= v;
+            auto left = ll.get;
+            foreach (i; 0 .. left.length)
+                combined ~= left.index(i);
+            auto right = rl.get;
+            foreach (i; 0 .. right.length)
+                combined ~= right.index(i);
             return Value(cast(List) new ArrayList(combined));
         }
     }
@@ -687,8 +689,9 @@ private Value evalIn(Value lhs, Value rhs)
     auto rl = tryGet!List(rhs);
     if (!rl.isNull)
     {
-        foreach (elem; rl.get)
-            if (elem == lhs)
+        auto list = rl.get;
+        foreach (i; 0 .. list.length)
+            if (list.index(i) == lhs)
                 return Value(true);
         return Value(false);
     }
