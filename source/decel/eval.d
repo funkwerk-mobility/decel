@@ -305,7 +305,7 @@ private Value parseList(ref TokenRange r, const Env env, Context ctx)
     if (r.peek().kind == Token.Kind.rbracket)
     {
         r.advance();
-        return Value(elems);
+        return Value(cast(List) new ArrayList(elems));
     }
     elems ~= parseExpr(r, env, ctx, 0);
     while (r.match(Token.Kind.comma))
@@ -315,7 +315,7 @@ private Value parseList(ref TokenRange r, const Env env, Context ctx)
         elems ~= parseExpr(r, env, ctx, 0);
     }
     r.expect(Token.Kind.rbracket);
-    return Value(elems);
+    return Value(cast(List) new ArrayList(elems));
 }
 
 /// Parse a map literal {...}.
@@ -623,12 +623,19 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
     }
 
     // List concatenation
-    auto ll = tryGet!(Value[])(lhs);
-    auto rl = tryGet!(Value[])(rhs);
+    auto ll = tryGet!List(lhs);
+    auto rl = tryGet!List(rhs);
     if (!ll.isNull && !rl.isNull)
     {
         if (op == Token.Kind.plus)
-            return Value(ll.get ~ rl.get);
+        {
+            Value[] combined;
+            foreach (v; ll.get)
+                combined ~= v;
+            foreach (v; rl.get)
+                combined ~= v;
+            return Value(cast(List) new ArrayList(combined));
+        }
     }
 
     return Value.err("unsupported operator " ~ kindName(
@@ -677,21 +684,11 @@ private Value evalIn(Value lhs, Value rhs)
         return Value(rs.get.canFind(ls.get));
     }
 
-    auto rl = tryGet!(Value[])(rhs);
+    auto rl = tryGet!List(rhs);
     if (!rl.isNull)
     {
-        foreach (ref elem; rl.get)
+        foreach (elem; rl.get)
             if (elem == lhs)
-                return Value(true);
-        return Value(false);
-    }
-
-    auto rel = tryGet!EntryList(rhs);
-    if (!rel.isNull)
-    {
-        auto el = rel.get;
-        foreach (i; 0 .. el.length)
-            if (el.index(i) == lhs)
                 return Value(true);
         return Value(false);
     }
@@ -730,7 +727,7 @@ private Value evalIndex(Value obj, Value index)
     if (isErr(index))
         return index;
 
-    auto listVal = tryGet!(Value[])(obj);
+    auto listVal = tryGet!List(obj);
     auto idxVal = tryGet!long(index);
     if (!listVal.isNull && !idxVal.isNull)
     {
@@ -740,19 +737,7 @@ private Value evalIndex(Value obj, Value index)
             idx += cast(long) list.length;
         if (idx < 0 || idx >= cast(long) list.length)
             return Value.err("index out of range");
-        return list[cast(size_t) idx];
-    }
-
-    auto entryListVal = tryGet!EntryList(obj);
-    if (!entryListVal.isNull && !idxVal.isNull)
-    {
-        auto el = entryListVal.get;
-        auto idx = idxVal.get;
-        if (idx < 0)
-            idx += cast(long) el.length;
-        if (idx < 0 || idx >= cast(long) el.length)
-            return Value.err("index out of range");
-        return el.index(cast(size_t) idx);
+        return list.index(cast(size_t) idx);
     }
 
     const im = tryGet!(Value[string])(obj);
@@ -866,12 +851,9 @@ private Value evalSize(Value v)
     auto b = tryGet!(immutable(ubyte)[])(v);
     if (!b.isNull)
         return Value(cast(long) b.get.length);
-    auto l = tryGet!(Value[])(v);
+    auto l = tryGet!List(v);
     if (!l.isNull)
         return Value(cast(long) l.get.length);
-    auto el = tryGet!EntryList(v);
-    if (!el.isNull)
-        return Value(cast(long) el.get.length);
     auto m = tryGet!(Value[string])(v);
     if (!m.isNull)
         return Value(cast(long) m.get.length);
@@ -1288,45 +1270,20 @@ private Value evalBody(ref TokenRange r, const Env env, Context ctx,
     return result;
 }
 
-/// Result of extracting a comprehension target: either a Value[] or an EntryList.
-private struct ListTarget
-{
-    Value[] array;
-    EntryList entryList;
-
-    size_t length()
-    {
-        if (entryList !is null)
-            return entryList.length;
-        return array.length;
-    }
-
-    Value opIndex(size_t i)
-    {
-        if (entryList !is null)
-            return entryList.index(i);
-        return array[i];
-    }
-}
-
-/// Extract a list from a comprehension target, consuming args on error.
-/// Returns null on error (with lhs set to the error Value to return).
-private Nullable!ListTarget extractListTarget(Value target, ref TokenRange r,
-        const Env env, Context ctx)
+/// Extract a List from a comprehension target, consuming args on error.
+/// Returns null on error (caller should return the appropriate error Value).
+private Nullable!List extractListTarget(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
     {
         cast(void) parseComprehensionArgs(r, env, ctx);
-        return Nullable!ListTarget.init;
+        return Nullable!List.init;
     }
-    auto list = tryGet!(Value[])(target);
+    auto list = tryGet!List(target);
     if (!list.isNull)
-        return nullable(ListTarget(list.get, null));
-    auto el = tryGet!EntryList(target);
-    if (!el.isNull)
-        return nullable(ListTarget(null, el.get));
+        return list;
     cast(void) parseComprehensionArgs(r, env, ctx);
-    return Nullable!ListTarget.init;
+    return Nullable!List.init;
 }
 
 /// `has(expr)` — true if expr doesn't produce an error.
@@ -1348,7 +1305,7 @@ private Value macroAll(Value target, ref TokenRange r, const Env env, Context ct
     auto lt = list.get;
     foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, lt[i]);
+        auto result = evalBody(r, env, ctx, args, lt.index(i));
         if (isErr(result))
             return result;
         if (isFalsy(result))
@@ -1368,7 +1325,7 @@ private Value macroExists(Value target, ref TokenRange r, const Env env, Context
     auto lt = list.get;
     foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, lt[i]);
+        auto result = evalBody(r, env, ctx, args, lt.index(i));
         if (isErr(result))
             return result;
         if (isTruthy(result))
@@ -1389,7 +1346,7 @@ private Value macroExistsOne(Value target, ref TokenRange r, const Env env, Cont
     int count = 0;
     foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, lt[i]);
+        auto result = evalBody(r, env, ctx, args, lt.index(i));
         if (isErr(result))
             return result;
         if (isTruthy(result))
@@ -1412,12 +1369,12 @@ private Value macroMap(Value target, ref TokenRange r, const Env env, Context ct
     Value[] result;
     foreach (i; 0 .. lt.length)
     {
-        auto mapped = evalBody(r, env, ctx, args, lt[i]);
+        auto mapped = evalBody(r, env, ctx, args, lt.index(i));
         if (isErr(mapped))
             return mapped;
         result ~= mapped;
     }
-    return Value(result);
+    return Value(cast(List) new ArrayList(result));
 }
 
 /// `list.filter(x, body)` — keep elements where body is true.
@@ -1432,13 +1389,13 @@ private Value macroFilter(Value target, ref TokenRange r, const Env env, Context
     Value[] result;
     foreach (i; 0 .. lt.length)
     {
-        auto pred = evalBody(r, env, ctx, args, lt[i]);
+        auto pred = evalBody(r, env, ctx, args, lt.index(i));
         if (isErr(pred))
             return pred;
         if (isTruthy(pred))
-            result ~= lt[i];
+            result ~= lt.index(i);
     }
-    return Value(result);
+    return Value(cast(List) new ArrayList(result));
 }
 
 // ── Literal parsing helpers ─────────────────────────────────────────
@@ -1829,8 +1786,6 @@ private string typeName(Value v)
         return "map";
     case Value.Type.entry:
         return "entry";
-    case Value.Type.entryList:
-        return "list";
     case Value.Type.duration:
         return "google.protobuf.Duration";
     case Value.Type.timestamp:
@@ -2397,13 +2352,13 @@ unittest
             value("google.protobuf.Timestamp"));
 }
 
-@("Eval: EntryList lazy list")
+@("Eval: lazy List subclass")
 unittest
 {
     import dshould;
 
-    // Create a lazy list backed by EntryList
-    class RangeList : EntryList
+    // Create a lazy list backed by List subclass
+    class RangeList : List
     {
         long start;
         long count;
@@ -2424,7 +2379,7 @@ unittest
         }
     }
 
-    auto ctx = contextFrom(["nums": Value(new RangeList(10, 5))]);
+    auto ctx = contextFrom(["nums": Value(cast(List) new RangeList(10, 5))]);
 
     // size()
     evaluate("size(nums)", ctx).should.be(value(5L));
@@ -2459,7 +2414,7 @@ unittest
         value(20L), value(22L), value(24L), value(26L), value(28L)
     ]));
     evaluate("nums.filter(x, x > 12)", ctx).should.be(value([
-            value(13L), value(14L)
+        value(13L), value(14L)
     ]));
 }
 

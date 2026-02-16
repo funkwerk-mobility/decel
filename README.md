@@ -62,7 +62,7 @@ CEL type          | D storage type              | Literal examples
 `string`          | `string`                    | `"hello"`, `'world'`, `"""multi"""`
 `bytes`           | `immutable(ubyte)[]`        | `b"abc"`
 `null_type`       | `typeof(null)`              | `null`
-`list`            | `Value[]`                   | `[1, 2, 3]`
+`list`            | `List` (`ArrayList`)        | `[1, 2, 3]`
 `map`             | `Value[string]`             | `{"key": "value"}`
 `duration`        | `core.time.Duration`        | `duration("PT1H30M")`
 `timestamp`       | `std.datetime.SysTime`      | `timestamp("2023-01-15T12:00:00Z")`
@@ -185,13 +185,14 @@ evaluate(`has(request.auth)`, ctx);            // true
 evaluate(`has(request.missing)`, ctx);         // false
 ```
 
-## Lazy Lists via EntryList
+## Lists and Lazy Lists
 
-For large datasets, subclass `EntryList` to provide lazy indexing and size
-without materializing an array:
+Lists are represented by the abstract `List` class. Literal lists use
+the built-in `ArrayList` (backed by `Value[]`), but you can subclass
+`List` directly for lazy/virtual access over large datasets:
 
 ```d
-class DatabaseRows : EntryList
+class DatabaseRows : List
 {
     override size_t length() { return 1_000_000; }
 
@@ -202,14 +203,24 @@ class DatabaseRows : EntryList
     }
 }
 
-auto ctx = contextFrom(["rows": Value(new DatabaseRows())]);
+auto ctx = contextFrom(["rows": Value(cast(List) new DatabaseRows())]);
 evaluate("rows[42]", ctx);            // fetches only row 42
 evaluate("size(rows)", ctx);           // 1000000 (no materialization)
 evaluate("rows.exists(r, r == 42)", ctx);  // iterates lazily
 ```
 
-`EntryList` supports `size()`, `[index]`, `in`, and all comprehensions
-(`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).
+All list operations work uniformly on both `ArrayList` and custom `List`
+subclasses: `size()`, `[index]`, `in`, `+` concatenation, and all
+comprehensions (`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).
+
+`List` also supports D-side `foreach` iteration via `opApply`:
+
+```d
+auto result = evaluate("[1, 2, 3]", emptyContext());
+auto list = result.get!List;
+foreach (elem; list)
+    writeln(elem.get!long);
+```
 
 ## Error Handling
 

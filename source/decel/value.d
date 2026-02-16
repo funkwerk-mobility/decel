@@ -15,15 +15,62 @@ abstract class Entry
     Value resolve(string name);
 }
 
-/// Lazy list — supports indexing and size without materializing.
+/// Abstract list — supports indexing, size, and iteration without materializing.
 /// Subclass to provide virtual array access over large datasets.
-abstract class EntryList
+/// The built-in `ArrayList` wraps a `Value[]` for literal list values.
+abstract class List
 {
     /// Number of elements in the list.
     abstract size_t length();
 
     /// Retrieve element at the given index (0-based).
     abstract Value index(size_t i);
+
+    /// Iterate over all elements (foreach support).
+    int opApply(scope int delegate(Value) dg)
+    {
+        foreach (i; 0 .. length())
+        {
+            if (auto r = dg(index(i)))
+                return r;
+        }
+        return 0;
+    }
+
+    /// Iterate with index (foreach support).
+    int opApply(scope int delegate(size_t, Value) dg)
+    {
+        foreach (i; 0 .. length())
+        {
+            if (auto r = dg(i, index(i)))
+                return r;
+        }
+        return 0;
+    }
+}
+
+/// Concrete list backed by a `Value[]` array.
+/// Used internally for list literals and list operations.
+class ArrayList : List
+{
+    /// The underlying array storage.
+    Value[] elements;
+
+    /// Construct from an existing array.
+    this(Value[] elems)
+    {
+        elements = elems;
+    }
+
+    override size_t length()
+    {
+        return elements.length;
+    }
+
+    override Value index(size_t i)
+    {
+        return elements[i];
+    }
 }
 
 /// A CEL value: the runtime representation of any CEL expression result.
@@ -42,7 +89,6 @@ struct Value
         list,
         map,
         entry,
-        entryList,
         duration,
         timestamp,
         err,
@@ -55,10 +101,9 @@ struct Value
             double, // double_
             string, // string_
             immutable(ubyte)[], // bytes_
-            Value[], // list
+            List, // list (abstract — ArrayList for literals, subclass for lazy)
             Value[string], // map (string-keyed)
             Entry, // entry (lazy)
-            EntryList, // entryList (lazy list)
             Duration, // duration
             SysTime, // timestamp
             Err, // err
@@ -104,9 +149,8 @@ struct Value
                 (ref bool _) => Type.bool_, (ref long _) => Type.int_,
                 (ref ulong _) => Type.uint_, (ref double _) => Type.double_,
                 (ref string _) => Type.string_, (ref immutable(ubyte)[] _) => Type.bytes_,
-                (ref Value[] _) => Type.list, (ref Value[string] _) => Type.map,
-                (ref Entry _) => Type.entry, (ref EntryList _) => Type.entryList,
-                (ref Duration _) => Type.duration,
+                (ref List _) => Type.list, (ref Value[string] _) => Type.map,
+                (ref Entry _) => Type.entry, (ref Duration _) => Type.duration,
                 (ref SysTime _) => Type.timestamp, (ref Err _) => Type.err,);
     }
 
@@ -217,12 +261,14 @@ private bool valueEquals(const Value a, const Value b)
 
     if (ta == Value.Type.list && tb == Value.Type.list)
     {
-        auto la = ma.inner.match!((ref Value[] v) => v, (ref _) => null);
-        auto lb = mb.inner.match!((ref Value[] v) => v, (ref _) => null);
+        auto la = ma.inner.match!((ref List v) => v, (ref _) => null);
+        auto lb = mb.inner.match!((ref List v) => v, (ref _) => null);
+        if (la is null || lb is null)
+            return false;
         if (la.length != lb.length)
             return false;
         foreach (i; 0 .. la.length)
-            if (!valueEquals(la[i], lb[i]))
+            if (!valueEquals(la.index(i), lb.index(i)))
                 return false;
         return true;
     }
@@ -256,20 +302,6 @@ private bool valueEquals(const Value a, const Value b)
         return sa == sb;
     }
 
-    if (ta == Value.Type.entryList && tb == Value.Type.entryList)
-    {
-        auto la = ma.inner.match!((ref EntryList v) => v, (ref _) => null);
-        auto lb = mb.inner.match!((ref EntryList v) => v, (ref _) => null);
-        if (la is null || lb is null)
-            return false;
-        if (la.length != lb.length)
-            return false;
-        foreach (i; 0 .. la.length)
-            if (!valueEquals(la.index(i), lb.index(i)))
-                return false;
-        return true;
-    }
-
     return false;
 }
 
@@ -277,6 +309,12 @@ private bool valueEquals(const Value a, const Value b)
 Value value(T)(T val)
 {
     return Value(val);
+}
+
+/// Convenience: construct a list Value from a Value array.
+Value value(T : Value[])(T elems)
+{
+    return Value(cast(List) new ArrayList(elems));
 }
 
 @("Value: construct and check types")
@@ -299,6 +337,9 @@ unittest
     import std.datetime.systime : SysTime, Clock;
 
     value(Clock.currTime()).type.should.be(Value.Type.timestamp);
+
+    // List via ArrayList
+    value([value(1L), value(2L)]).type.should.be(Value.Type.list);
 }
 
 @("Value: deep equality")
@@ -318,4 +359,22 @@ unittest
     (value([value(1L), value(2L)]) == value([value(1L), value(3L)])).should.be(false);
 
     (Value.err("a") == Value.err("a")).should.be(false);
+}
+
+@("Value: List opApply iteration")
+unittest
+{
+    import dshould;
+
+    auto list = new ArrayList([value(10L), value(20L), value(30L)]);
+    long sum = 0;
+    foreach (v; list)
+        sum += v.get!long;
+    sum.should.be(60L);
+
+    // With index
+    size_t lastIdx;
+    foreach (i, v; list)
+        lastIdx = i;
+    lastIdx.should.be(2);
 }
