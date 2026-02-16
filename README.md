@@ -113,6 +113,9 @@ double(42)             // 42.0
 string(42)             // "42"
 uint(1)                // 1u
 
+// Current time
+now()                  // current timestamp (UTC)
+
 // Existence check
 has(request.auth)      // true if auth field exists (not an error)
 

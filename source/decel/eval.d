@@ -793,6 +793,11 @@ private Value evalFunction(string name, Value[] args, size_t pos)
         if (args.length != 1)
             throw new EvalException("timestamp() takes exactly 1 argument", pos);
         return evalTimestampCast(args[0]);
+    case "now":
+        if (args.length != 0)
+            throw new EvalException("now() takes no arguments", pos);
+        import std.datetime.systime : Clock;
+        return Value(Clock.currTime(UTC()));
     default:
         throw new EvalException("unknown function: " ~ name, pos);
     }
@@ -2360,6 +2365,42 @@ unittest
     evaluate("nums.filter(x, x > 12)", ctx).should.be(value([
         value(13L), value(14L)
     ]));
+}
+
+@("Eval: now() function")
+unittest
+{
+    import dshould;
+    import std.datetime.systime : Clock;
+
+    auto result = evaluate(`now()`, emptyContext());
+    result.type.should.be(Value.Type.timestamp);
+
+    // now() should return a timestamp close to the current time
+    auto nowTs = Clock.currTime(UTC());
+    auto diff = nowTs - result.get!SysTime;
+    // Should be within 1 second
+    assert(diff.total!"seconds" < 1, "now() timestamp too far from current time");
+}
+
+@("Eval: now() with arithmetic")
+unittest
+{
+    import dshould;
+
+    // now() + duration should produce a timestamp
+    evaluate(`now() + duration("PT1H")`, emptyContext()).type.should.be(Value.Type.timestamp);
+
+    // now() comparison with itself (via context)
+    evaluate(`now() >= now()`, emptyContext()).type.should.be(Value.Type.bool_);
+}
+
+@("Eval: now() rejects arguments")
+unittest
+{
+    import dshould;
+
+    evaluate(`now(1)`, emptyContext()).should.throwA!EvalException;
 }
 
 @("Eval: duration/timestamp from context")

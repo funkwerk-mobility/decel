@@ -39,6 +39,7 @@
 - [x] `.matches()` regex method — `s.matches(re)` for full-string regex matching
 - [x] Null semantics: `null == null` → true, `null != X` → true, null arithmetic → error
 - [x] Cross-type numeric comparison (`1u == 1`, `-1 < 1u`, `1u + 1`, etc.)
+- [x] `now()` function — returns the current time as a timestamp value
 
 ## 🎯 1.0.0 Blockers
 

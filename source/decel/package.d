@@ -7,6 +7,7 @@
  + The public API consists of:
  + $(UL
  +   $(LI `evaluate` / `evaluateWithMacros` — evaluate a CEL expression string)
+ +   $(LI `now()` — built-in function returning the current timestamp)
  +   $(LI `Value` / `value` — the runtime value type and convenience constructor)
  +   $(LI `Context` / `contextFrom` / `emptyContext` / `bindContext` — variable bindings)
  +   $(LI `Macro` / `MethodMacro` / `Env` — extension points for custom functions)
