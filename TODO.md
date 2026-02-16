@@ -34,11 +34,9 @@
 - [x] `Value.opEquals` / deep equality (lists, maps, all types)
 - [x] Macro system (function-call and method-call macros)
 - [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`
+- [x] `.matches()` regex method — `s.matches(re)` for full-string regex matching
 
 ## 🎯 1.0.0 Blockers
-
-- [ ] **`.matches()` regex method** — `s.matches(re)` for RE2-style regex.
-      Use D's `std.regex`. Cache compiled patterns per expression.
 
 - [ ] **Null semantics** — verify and test: `null == null` → `true`,
       `null != X` → `true` for non-null X, arithmetic with null → error.

@@ -688,7 +688,9 @@ private Value evalMethod(Value obj, string name, Value[] args)
             return Value.err(".endsWith() takes exactly 1 argument");
         return evalEndsWith(obj, args[0]);
     case "matches":
-        return Value.err(".matches() is not yet implemented");
+        if (args.length != 1)
+            return Value.err(".matches() takes exactly 1 argument");
+        return evalMatches(obj, args[0]);
     default:
         return Value.err("unknown method: " ~ name);
     }
@@ -743,6 +745,35 @@ private Value evalStartsWith(Value obj, Value arg)
     if (!s.isNull && !pre.isNull)
         return Value(s.get.startsWith(pre.get));
     return Value.err(".startsWith() requires string arguments");
+}
+
+private Value evalMatches(Value obj, Value arg)
+{
+    import std.regex : regex, matchFirst, RegexException;
+
+    if (isErr(obj))
+        return obj;
+    if (isErr(arg))
+        return arg;
+    auto s = tryGet!string(obj);
+    auto pat = tryGet!string(arg);
+    if (s.isNull || pat.isNull)
+        return Value.err(".matches() requires string arguments");
+
+    // CEL .matches() checks if the entire string matches the regex.
+    // Anchor the pattern to enforce full-string matching.
+    string anchored = "^(?:" ~ pat.get ~ ")$";
+
+    try
+    {
+        auto re = regex(anchored);
+        auto m = matchFirst(s.get, re);
+        return Value(!m.empty);
+    }
+    catch (RegexException e)
+    {
+        return Value.err("invalid regex: " ~ e.msg);
+    }
 }
 
 private Value evalEndsWith(Value obj, Value arg)
@@ -1584,4 +1615,25 @@ unittest
     evaluate("false && (1/0 == 1)", emptyContext()).should.be(value(false));
     evaluate("true && (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
     evaluate("false || (1/0 == 1)", emptyContext()).type.should.be(Value.Type.err);
+}
+
+@("Eval: .matches() regex method")
+unittest
+{
+    import dshould;
+
+    // Basic matching
+    evaluate(`"hello".matches("hel.*")`, emptyContext()).should.be(value(true));
+    evaluate(`"hello".matches("world")`, emptyContext()).should.be(value(false));
+
+    // Full string match (not partial)
+    evaluate(`"hello world".matches("hello")`, emptyContext()).should.be(value(false));
+    evaluate(`"hello world".matches("hello.*")`, emptyContext()).should.be(value(true));
+
+    // Character classes
+    evaluate(`"abc123".matches("[a-z]+[0-9]+")`, emptyContext()).should.be(value(true));
+
+    // Empty string
+    evaluate(`"".matches("")`, emptyContext()).should.be(value(true));
+    evaluate(`"".matches(".")`, emptyContext()).should.be(value(false));
 }
