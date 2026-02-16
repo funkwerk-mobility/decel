@@ -197,52 +197,92 @@ private bool valueEquals(const Value a, const Value b)
 
     if (ta == Value.Type.bool_ && tb == Value.Type.bool_)
     {
-        auto va = ma.inner.match!((ref bool v) => v, (ref _) => false);
-        auto vb = mb.inner.match!((ref bool v) => v, (ref _) => false);
+        auto va = ma.inner.match!((ref bool v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return false;
+        });
+        auto vb = mb.inner.match!((ref bool v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return false;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.int_ && tb == Value.Type.int_)
     {
-        auto va = ma.inner.match!((ref long v) => v, (ref _) => long.min);
-        auto vb = mb.inner.match!((ref long v) => v, (ref _) => long.min);
+        auto va = ma.inner.match!((ref long v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0L;
+        });
+        auto vb = mb.inner.match!((ref long v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0L;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.uint_ && tb == Value.Type.uint_)
     {
-        auto va = ma.inner.match!((ref ulong v) => v, (ref _) => ulong.max);
-        auto vb = mb.inner.match!((ref ulong v) => v, (ref _) => ulong.max);
+        auto va = ma.inner.match!((ref ulong v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0UL;
+        });
+        auto vb = mb.inner.match!((ref ulong v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0UL;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.double_ && tb == Value.Type.double_)
     {
-        auto va = ma.inner.match!((ref double v) => v, (ref _) => double.nan);
-        auto vb = mb.inner.match!((ref double v) => v, (ref _) => double.nan);
+        auto va = ma.inner.match!((ref double v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0.0;
+        });
+        auto vb = mb.inner.match!((ref double v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0.0;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.string_ && tb == Value.Type.string_)
     {
-        auto va = ma.inner.match!((ref string v) => v, (ref _) => null);
-        auto vb = mb.inner.match!((ref string v) => v, (ref _) => null);
+        auto va = ma.inner.match!((ref string v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
+        auto vb = mb.inner.match!((ref string v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.bytes_ && tb == Value.Type.bytes_)
     {
-        auto va = ma.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) => null);
-        auto vb = mb.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) => null);
+        auto va = ma.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
+        auto vb = mb.inner.match!((ref immutable(ubyte)[] v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
         return va == vb;
     }
 
     if (ta == Value.Type.list && tb == Value.Type.list)
     {
-        auto la = ma.inner.match!((ref List v) => v, (ref _) => null);
-        auto lb = mb.inner.match!((ref List v) => v, (ref _) => null);
-        if (la is null || lb is null)
-            return false;
+        auto la = ma.inner.match!((ref List v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
+        auto lb = mb.inner.match!((ref List v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
         if (la.length != lb.length)
             return false;
         foreach (i; 0 .. la.length)
@@ -253,8 +293,14 @@ private bool valueEquals(const Value a, const Value b)
 
     if (ta == Value.Type.map && tb == Value.Type.map)
     {
-        auto mapA = ma.inner.match!((ref Value[string] v) => v, (ref _) => null);
-        auto mapB = mb.inner.match!((ref Value[string] v) => v, (ref _) => null);
+        auto mapA = ma.inner.match!((ref Value[string] v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
+        auto mapB = mb.inner.match!((ref Value[string] v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return null;
+        });
         if (mapA.length != mapB.length)
             return false;
         foreach (k, v; mapA)
@@ -268,15 +314,27 @@ private bool valueEquals(const Value a, const Value b)
 
     if (ta == Value.Type.duration && tb == Value.Type.duration)
     {
-        auto da = ma.inner.match!((ref Duration v) => v, (ref _) => Duration.zero);
-        auto db = mb.inner.match!((ref Duration v) => v, (ref _) => Duration.zero);
+        auto da = ma.inner.match!((ref Duration v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return Duration.zero;
+        });
+        auto db = mb.inner.match!((ref Duration v) => v, (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return Duration.zero;
+        });
         return da == db;
     }
 
     if (ta == Value.Type.timestamp && tb == Value.Type.timestamp)
     {
-        auto sa = ma.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
-        auto sb = mb.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
+        auto sa = ma.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0L;
+        });
+        auto sb = mb.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) {
+            assert(0, "type mismatch in valueEquals");
+            return 0L;
+        });
         return sa == sb;
     }
 
