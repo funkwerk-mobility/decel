@@ -10,6 +10,7 @@
 - [x] String concatenation and comparison
 - [x] Boolean logic (&&, ||, !)
 - [x] Short-circuit evaluation (false && err → false, true || err → true)
+- [x] Strict bool semantics (&&, ||, ternary reject non-bool operands)
 - [x] Error-value semantics (eval errors are Values, not exceptions)
 - [x] Comparison operators (<, <=, >, >=, ==, !=)
 - [x] Ternary conditional (? :)
@@ -17,7 +18,7 @@
 - [x] Map literals (string keys), field access, and index access
 - [x] Unary negation (-, !)
 - [x] Variable resolution via Context
-- [x] `in` operator (string contains, map key membership)
+- [x] `in` operator (string contains, list membership, map key membership)
 - [x] `size()` function and method
 - [x] `.contains()`, `.startsWith()`, `.endsWith()` string methods
 - [x] Type cast functions: `int()`, `uint()`, `double()`, `string()`
@@ -29,35 +30,34 @@
 - [x] Raw strings (r"...")
 - [x] Hex integer literals (0xFF)
 - [x] Escape sequences in strings
+- [x] `has()` macro
+- [x] `Value.opEquals` / deep equality (lists, maps, all types)
+- [x] Macro system (function-call and method-call macros)
+- [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`
 
-## 🔨 Core CEL Features — Not Yet Implemented
-
-### High Priority
-
-- [x] **`has()` macro** — `has(x.y)` tests field existence without evaluating.
-      Implemented as a built-in macro that receives the parser.
-
-- [x] **`Value.opEquals` / deep equality** — Recursive comparison for all
-      Value types including lists and maps. Enables `in` on lists.
-
-- [x] **`in` operator on lists** — `1 in [1, 2, 3]` now works with deep equality.
-
-- [x] **Macro system** — Macros receive the parser and handle their own argument
-      parsing. Built-in macros (`has`) and custom macros via `evaluateWithMacros()`.
-      This is the foundation for comprehensions, custom functions, etc.
+## 🎯 1.0.0 Blockers
 
 - [ ] **`.matches()` regex method** — `s.matches(re)` for RE2-style regex.
-      D's `std.regex` should work. Need to decide on caching compiled patterns.
+      Use D's `std.regex`. Cache compiled patterns per expression.
 
-- [ ] **Null semantics** — CEL specifies: `null == null` is `true`,
-      `null != X` is `true` for non-null X, arithmetic with null is an error.
-      Verify and test our current behavior.
+- [ ] **Null semantics** — verify and test: `null == null` → `true`,
+      `null != X` → `true` for non-null X, arithmetic with null → error.
+      Likely already works, just needs explicit test coverage.
+
+- [ ] **Cross-type numeric comparison** — `1u == 1` should be `true`,
+      `1u < 2` should work, `1.0 == 1` should be `true`. Currently
+      uint and int are separate types with no cross-comparison.
+
+- [ ] **README with examples** — Usage documentation, API examples,
+      quick-start guide. Can't ship a library without docs.
+
+## 🔮 Post-1.0
+
+### Medium Priority
 
 - [ ] **Duration and timestamp types** — CEL has `google.protobuf.Timestamp`
       and `google.protobuf.Duration` as first-class types with arithmetic.
       Could use D's `core.time.Duration` and `std.datetime.SysTime`.
-
-### Medium Priority
 
 - [ ] **Non-string map keys** — CEL spec allows `bool`, `int`, `uint`, and
       `string` as map keys. We only support `string`. Would need to change
@@ -66,30 +66,20 @@
 - [ ] **Bytes operations** — Bytes literals are tokenized but bytes values
       aren't fully operational. Need: comparison, `size()`, `+` concatenation.
 
-- [ ] **List/map equality** — `[1, 2] == [1, 2]` should be `true`.
-      Requires recursive deep equality (blocked on `Value.opEquals`).
-
-- [ ] **Unsigned/signed cross-type comparison** — `1u == 1` should be `true`.
-      Currently uint and int are different types with no cross-comparison.
-
 - [ ] **Overflow detection** — CEL specifies that integer overflow is an error.
-      We currently wrap silently.
+      We currently wrap silently. (CEL spec says this is optional.)
+
+- [ ] **Custom functions** — User-registered functions beyond the macro system.
+      A simpler `Value function(Value[])` registration API for common cases.
+
+- [ ] **Better error messages** — Include source context (the expression
+      snippet) in error messages, not just byte offset.
 
 ### Lower Priority
-
-- [x] **Comprehensions** — `list.all(x, x > 0)`, `list.exists(x, x > 0)`,
-      `list.exists_one(x, x == 2)`, `list.map(x, x * 2)`, `list.filter(x, x > 0)`.
-      Implemented as method macros that receive target + parser.
-
-- [ ] **Custom functions** — User-registered functions via `Env`. Need a
-      registration API and dispatch mechanism.
 
 - [ ] **`dyn()` type** — Dynamic type assertion, rarely used in practice.
 
 - [ ] **Enum support** — CEL can reference protobuf enum values by name.
-
-- [ ] **Better error messages** — Include source context (the expression
-      snippet) in error messages, not just byte offset.
 
 - [ ] **Performance** — Currently re-tokenizes on every `evaluate()` call.
       Could cache token arrays or build a simple AST for repeated evaluation.
@@ -98,8 +88,6 @@
 
 - [ ] **Conformance tests** — Run against the official
       [cel-spec conformance suite](https://github.com/google/cel-spec/tree/master/tests).
-
-- [ ] **README with examples** — Usage documentation, API examples.
 
 - [ ] **DUB package publishing** — Register on code.dlang.org.
 
@@ -115,3 +103,5 @@
 - Pratt parsing for operator precedence.
 - Short-circuit `&&` and `||` — both sides are always parsed, but
   `false && err` → `false` and `true || err` → `true`.
+- Strict bool semantics — `&&`, `||`, and `?:` reject non-bool operands
+  with error values rather than coercing.

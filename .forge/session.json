@@ -139,6 +139,33 @@
       "streaming": true,
       "actual_cost": 0.20401225,
       "generation_id": "gen-1771232961-AyNVf9Nf2lsLE6ghHnJ6"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771234058533.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771234058533.json",
+      "timestamp": 1771234058.5357046,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.31611875,
+      "generation_id": "gen-1771234059-Hj54rXt89YSn2lkGcGId"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771234068550.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771234068550.json",
+      "timestamp": 1771234068.5515215,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.22221625,
+      "generation_id": "gen-1771234068-TuKBRqzIb2doGVDNzgyd"
+    },
+    {
+      "request_file": "/tmp/forge_debug/request_stream_1771234073930.json",
+      "response_file": "/tmp/forge_debug/response_stream_1771234073930.json",
+      "timestamp": 1771234073.9309015,
+      "model": "anthropic/claude-opus-4.6",
+      "streaming": true,
+      "actual_cost": 0.076014,
+      "generation_id": "gen-1771234074-33v1nWkB2TFdWM2AoyLC"
     }
   ],
   "messages": [
@@ -450,6 +477,79 @@
         {
           "commit": "0b25a3324564",
           "message": "Committed: 2 file(s) modified/created",
+          "side_effects": [
+            "mid_turn_commit"
+          ],
+          "success": true
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "\u2705 Changes committed: 2d83f26e",
+      "_ui_only": true
+    },
+    {
+      "role": "user",
+      "content": "aigh, what's left on the TODO for 1.0.0? feel free to adjust that file btw"
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me review the TODO against what's actually implemented and what's realistic for a 1.0.",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"from_id\": \"9\", \"to_id\": \"21\", \"summary\": \"Fixed test and lint issues across multiple turns:\\n1. Fixed `true || 1` test \u2014 short-circuit correctly returns `true`, not err. Updated test to check `true && 1` \u2192 err and `false || 1` \u2192 err instead.\\n2. Removed unused `methodName` parameter from `extractListTarget` and all 5 call sites.\\n3. Fixed map key null-string ambiguity \u2014 switched from `match!` to `tryGet!string` so empty string keys work.\\n4. Improved doc comments on `Macro` and `MethodMacro` aliases in env.d.\\nAll 46 tests pass, no lint warnings. Two commits: 83936756 and 0b25a332.\"}",
+            "name": "compact"
+          },
+          "id": "toolu_vrtx_01HaEZaQnHMDbpc4qzTBJDuC",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_vrtx_01HaEZaQnHMDbpc4qzTBJDuC",
+      "content": "{\"compact\": true, \"from_id\": \"9\", \"success\": true, \"summary\": \"Fixed test and lint issues across multiple turns:\\n1. Fixed `true || 1` test \\u2014 short-circuit correctly returns `true`, not err. Updated test to check `true && 1` \\u2192 err and `false || 1` \\u2192 err instead.\\n2. Removed unused `methodName` parameter from `extractListTarget` and all 5 call sites.\\n3. Fixed map key null-string ambiguity \\u2014 switched from `match!` to `tryGet!string` so empty string keys work.\\n4. Improved doc comments on `Macro` and `MethodMacro` aliases in env.d.\\nAll 46 tests pass, no lint warnings. Two commits: 83936756 and 0b25a332.\", \"to_id\": \"21\"}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nLet me look at what's actually in the TODO and cross-reference with the current implementation:",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"add\": [\"TODO.md\"]}",
+            "name": "update_context"
+          },
+          "id": "toolu_vrtx_01WfJS92vsq5P3C5TnQT9Ftj",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_vrtx_01WfJS92vsq5P3C5TnQT9Ftj",
+      "content": "{\"action\": \"update_context\", \"add\": [\"TODO.md\"], \"message\": \"Added 1 files, removed 0 files from context\", \"remove\": [], \"success\": true}",
+      "_skip_display": true
+    },
+    {
+      "role": "assistant",
+      "content": "\n\nAlright, let me audit the TODO against what's actually implemented in the code. Here's my assessment:\n\n**Already done (marked \u2705 in TODO):** All correct \u2014 lexer, Pratt parser, arithmetic, strings, booleans, short-circuit, errors, comparisons, ternary, lists, maps, unary, context, `in`, `size()`, string methods, type casts, `type()`, Entry, nested access, list concat, triple-quoted strings, raw strings, hex literals, escapes, `has()`, `Value.opEquals`, `in` on lists, macro system, comprehensions.\n\n**Remaining items \u2014 what's realistic for 1.0:**\n\n| Item | Verdict |\n|------|---------|\n| `.matches()` regex | **Do it** \u2014 straightforward with `std.regex` |\n| Null semantics | **Already works** \u2014 `null == null` \u2192 true, `null != X` \u2192 true, arithmetic errors. Just need tests to verify. |\n| Duration/timestamp | **Defer** \u2014 big surface area, rarely needed without protobuf |\n| Non-string map keys | **Defer** \u2014 documented deviation, fine for 1.0 |\n| Bytes operations | **Defer** \u2014 tokenized but niche |\n| List/map equality | **Already done** \u2014 `Value.opEquals` handles this \u2705 |\n| Cross-type comparison | **Do it** \u2014 `1u == 1` should work, small change |\n| Overflow detection | **Defer** \u2014 CEL spec says it's optional |\n| Custom functions | **Defer** \u2014 macro system covers this for now |\n| `dyn()`, enums | **Defer** |\n| Better error messages | **Nice to have**, not blocking |\n| README | **Do it** \u2014 can't ship without docs |\n| Conformance tests | **Defer** \u2014 aspirational |\n\nLet me update the TODO to reflect this and reorganize for 1.0:\n\n<edit file=\"TODO.md\">\n# decel \u2014 TODO\n\n## \u2705 Implemented\n\n- [x] Lexer: full CEL token set (ints, uints, floats, strings, bytes, keywords, operators)\n- [x] Pratt parser with correct operator precedence\n- [x] Integer arithmetic (+, -, *, /, %)\n- [x] Unsigned integer arithmetic\n- [x] Double arithmetic (with int/uint promotion)\n- [x] String concatenation and comparison\n- [x] Boolean logic (&&, ||, !)\n- [x] Short-circuit evaluation (false && err \u2192 false, true || err \u2192 true)\n- [x] Strict bool semantics (&&, ||, ternary reject non-bool operands)\n- [x] Error-value semantics (eval errors are Values, not exceptions)\n- [x] Comparison operators (<, <=, >, >=, ==, !=)\n- [x] Ternary conditional (? :)\n- [x] List literals and indexing\n- [x] Map literals (string keys), field access, and index access\n- [x] Unary negation (-, !)\n- [x] Variable resolution via Context\n- [x] `in` operator (string contains, list membership, map key membership)\n- [x] `size()` function and method\n- [x] `.contains()`, `.startsWith()`, `.endsWith()` string methods\n- [x] Type cast functions: `int()`, `uint()`, `double()`, `string()`\n- [x] `type()` function\n- [x] Entry (lazy map) support via abstract class\n- [x] Nested member access (e.g., `req.method`)\n- [x] List concatenation with `+`\n- [x] Triple-quoted strings\n- [x] Raw strings (r\"...\")\n- [x] Hex integer literals (0xFF)\n- [x] Escape sequences in strings\n- [x] `has()` macro\n- [x] `Value.opEquals` / deep equality (lists, maps, all types)\n- [x] Macro system (function-call and method-call macros)\n- [x] Comprehensions: `.all()`, `.exists()`, `.exists_one()`, `.map()`, `.filter()`\n\n## \ud83c\udfaf 1.0.0 Blockers\n\n- [ ] **`.matches()` regex method** \u2014 `s.matches(re)` for RE2-style regex.\n      Use D's `std.regex`. Cache compiled patterns per expression.\n\n- [ ] **Null semantics** \u2014 verify and test: `null == null` \u2192 `true`,\n      `null != X` \u2192 `true` for non-null X, arithmetic with null \u2192 error.\n      Likely already works, just needs explicit test coverage.\n\n- [ ] **Cross-type numeric comparison** \u2014 `1u == 1` should be `true`,\n      `1u < 2` should work, `1.0 == 1` should be `true`. Currently\n      uint and int are separate types with no cross-comparison.\n\n- [ ] **README with examples** \u2014 Usage documentation, API examples,\n      quick-start guide. Can't ship a library without docs.\n\n## \ud83d\udd2e Post-1.0\n\n### Medium Priority\n\n- [ ] **Duration and timestamp types** \u2014 CEL has `google.protobuf.Timestamp`\n      and `google.protobuf.Duration` as first-class types with arithmetic.\n      Could use D's `core.time.Duration` and `std.datetime.SysTime`.\n\n- [ ] **Non-string map keys** \u2014 CEL spec allows `bool`, `int`, `uint`, and\n      `string` as map keys. We only support `string`. Would need to change\n      `Value[string]` to a custom map type. (See COMPATIBILITY.md)\n\n- [ ] **Bytes operations** \u2014 Bytes literals are tokenized but bytes values\n      aren't fully operational. Need: comparison, `size()`, `+` concatenation.\n\n- [ ] **Overflow detection** \u2014 CEL specifies that integer overflow is an error.\n      We currently wrap silently. (CEL spec says this is optional.)\n\n- [ ] **Custom functions** \u2014 User-registered functions beyond the macro system.\n      A simpler `Value function(Value[])` registration API for common cases.\n\n- [ ] **Better error messages** \u2014 Include source context (the expression\n      snippet) in error messages, not just byte offset.\n\n### Lower Priority\n\n- [ ] **`dyn()` type** \u2014 Dynamic type assertion, rarely used in practice.\n\n- [ ] **Enum support** \u2014 CEL can reference protobuf enum values by name.\n\n- [ ] **Performance** \u2014 Currently re-tokenizes on every `evaluate()` call.\n      Could cache token arrays or build a simple AST for repeated evaluation.\n\n## \ud83c\udfd7\ufe0f Infrastructure\n\n- [ ] **Conformance tests** \u2014 Run against the official\n      [cel-spec conformance suite](https://github.com/google/cel-spec/tree/master/tests).\n\n- [ ] **DUB package publishing** \u2014 Register on code.dlang.org.\n\n- [ ] **Benchmarks** \u2014 Compare against cel-go for common expressions.\n\n## Architecture Notes\n\n- Single-pass tokenize \u2192 evaluate. No AST.\n- Error values (`Value.err`) for evaluation errors (division by zero,\n  type mismatches, missing keys). Errors propagate through operators\n  and are naturally absorbed by short-circuit `&&` and `||`.\n- `EvalException` only for parse/syntax errors (unexpected token, etc.).\n- Pratt parsing for operator precedence.\n- Short-circuit `&&` and `||` \u2014 both sides are always parsed, but\n  `false && err` \u2192 `false` and `true || err` \u2192 `true`.\n- Strict bool semantics \u2014 `&&`, `||`, and `?:` reject non-bool operands\n  with error values rather than coercing.\n</edit>\n\n<commit message=\"Reorganize TODO for 1.0.0 release\n\n- Separate 1.0 blockers from post-1.0 work\n- Mark list/map equality as done (Value.opEquals)\n- Add .matches(), null semantics, cross-type comparison, README as blockers\n- Move duration/timestamp, non-string keys, bytes, overflow to post-1.0\n- Update architecture notes for strict bool semantics\n\" />\n\nSo the **1.0 blockers** are:\n\n1. **`.matches()` regex** \u2014 Probably an hour of work. Wire up `std.regex` in `evalMethod`, add tests.\n\n2. **Null semantics** \u2014 I suspect this mostly works already from how `evalBinary` and `valueEquals` handle things. Need to write explicit tests and fix any gaps.\n\n3. **Cross-type numeric comparison** \u2014 `1u == 1`, `1.0 == 1`, etc. The double promotion path already handles `1.0 == 1` via `toDouble()`. The `int`/`uint` cross-comparison needs a new branch in `evalBinary`.\n\n4. **README** \u2014 Docs. Standard stuff.\n\nWant me to start knocking these out? I'd probably tackle `.matches()` and cross-type comparison first since they're code changes, then null semantics (mostly tests), then README last.",
+      "_inline_results": [
+        {
+          "message": "Wrote 4597 bytes to TODO.md",
+          "modified_files": [
+            "TODO.md"
+          ],
+          "side_effects": [
+            "files_modified"
+          ],
+          "success": true
+        },
+        {
+          "commit": "40e933270954",
+          "message": "Committed: 1 file(s) modified/created",
           "side_effects": [
             "mid_turn_commit"
           ],
