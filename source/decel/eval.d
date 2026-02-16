@@ -686,6 +686,16 @@ private Value evalIn(Value lhs, Value rhs)
         return Value(false);
     }
 
+    auto rel = tryGet!EntryList(rhs);
+    if (!rel.isNull)
+    {
+        auto el = rel.get;
+        foreach (i; 0 .. el.length)
+            if (el.index(i) == lhs)
+                return Value(true);
+        return Value(false);
+    }
+
     auto rm = tryGet!(Value[string])(rhs);
     if (!rm.isNull && !ls.isNull)
     {
@@ -731,6 +741,18 @@ private Value evalIndex(Value obj, Value index)
         if (idx < 0 || idx >= cast(long) list.length)
             return Value.err("index out of range");
         return list[cast(size_t) idx];
+    }
+
+    auto entryListVal = tryGet!EntryList(obj);
+    if (!entryListVal.isNull && !idxVal.isNull)
+    {
+        auto el = entryListVal.get;
+        auto idx = idxVal.get;
+        if (idx < 0)
+            idx += cast(long) el.length;
+        if (idx < 0 || idx >= cast(long) el.length)
+            return Value.err("index out of range");
+        return el.index(cast(size_t) idx);
     }
 
     const im = tryGet!(Value[string])(obj);
@@ -847,6 +869,9 @@ private Value evalSize(Value v)
     auto l = tryGet!(Value[])(v);
     if (!l.isNull)
         return Value(cast(long) l.get.length);
+    auto el = tryGet!EntryList(v);
+    if (!el.isNull)
+        return Value(cast(long) el.get.length);
     auto m = tryGet!(Value[string])(v);
     if (!m.isNull)
         return Value(cast(long) m.get.length);
@@ -1263,23 +1288,45 @@ private Value evalBody(ref TokenRange r, const Env env, Context ctx,
     return result;
 }
 
+/// Result of extracting a comprehension target: either a Value[] or an EntryList.
+private struct ListTarget
+{
+    Value[] array;
+    EntryList entryList;
+
+    size_t length()
+    {
+        if (entryList !is null)
+            return entryList.length;
+        return array.length;
+    }
+
+    Value opIndex(size_t i)
+    {
+        if (entryList !is null)
+            return entryList.index(i);
+        return array[i];
+    }
+}
+
 /// Extract a list from a comprehension target, consuming args on error.
 /// Returns null on error (with lhs set to the error Value to return).
-private Nullable!(Value[]) extractListTarget(Value target, ref TokenRange r,
+private Nullable!ListTarget extractListTarget(Value target, ref TokenRange r,
         const Env env, Context ctx)
 {
     if (isErr(target))
     {
         cast(void) parseComprehensionArgs(r, env, ctx);
-        return Nullable!(Value[]).init;
+        return Nullable!ListTarget.init;
     }
     auto list = tryGet!(Value[])(target);
-    if (list.isNull)
-    {
-        cast(void) parseComprehensionArgs(r, env, ctx);
-        return Nullable!(Value[]).init;
-    }
-    return list;
+    if (!list.isNull)
+        return nullable(ListTarget(list.get, null));
+    auto el = tryGet!EntryList(target);
+    if (!el.isNull)
+        return nullable(ListTarget(null, el.get));
+    cast(void) parseComprehensionArgs(r, env, ctx);
+    return Nullable!ListTarget.init;
 }
 
 /// `has(expr)` — true if expr doesn't produce an error.
@@ -1298,9 +1345,10 @@ private Value macroAll(Value target, ref TokenRange r, const Env env, Context ct
         return isErr(target) ? target : Value.err(".all() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
-    foreach (ref elem; list.get)
+    auto lt = list.get;
+    foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, elem);
+        auto result = evalBody(r, env, ctx, args, lt[i]);
         if (isErr(result))
             return result;
         if (isFalsy(result))
@@ -1317,9 +1365,10 @@ private Value macroExists(Value target, ref TokenRange r, const Env env, Context
         return isErr(target) ? target : Value.err(".exists() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
-    foreach (ref elem; list.get)
+    auto lt = list.get;
+    foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, elem);
+        auto result = evalBody(r, env, ctx, args, lt[i]);
         if (isErr(result))
             return result;
         if (isTruthy(result))
@@ -1336,10 +1385,11 @@ private Value macroExistsOne(Value target, ref TokenRange r, const Env env, Cont
         return isErr(target) ? target : Value.err(".exists_one() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
+    auto lt = list.get;
     int count = 0;
-    foreach (ref elem; list.get)
+    foreach (i; 0 .. lt.length)
     {
-        auto result = evalBody(r, env, ctx, args, elem);
+        auto result = evalBody(r, env, ctx, args, lt[i]);
         if (isErr(result))
             return result;
         if (isTruthy(result))
@@ -1358,10 +1408,11 @@ private Value macroMap(Value target, ref TokenRange r, const Env env, Context ct
         return isErr(target) ? target : Value.err(".map() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
+    auto lt = list.get;
     Value[] result;
-    foreach (ref elem; list.get)
+    foreach (i; 0 .. lt.length)
     {
-        auto mapped = evalBody(r, env, ctx, args, elem);
+        auto mapped = evalBody(r, env, ctx, args, lt[i]);
         if (isErr(mapped))
             return mapped;
         result ~= mapped;
@@ -1377,14 +1428,15 @@ private Value macroFilter(Value target, ref TokenRange r, const Env env, Context
         return isErr(target) ? target : Value.err(".filter() requires a list");
 
     auto args = parseComprehensionArgs(r, env, ctx);
+    auto lt = list.get;
     Value[] result;
-    foreach (ref elem; list.get)
+    foreach (i; 0 .. lt.length)
     {
-        auto pred = evalBody(r, env, ctx, args, elem);
+        auto pred = evalBody(r, env, ctx, args, lt[i]);
         if (isErr(pred))
             return pred;
         if (isTruthy(pred))
-            result ~= elem;
+            result ~= lt[i];
     }
     return Value(result);
 }
@@ -1777,6 +1829,8 @@ private string typeName(Value v)
         return "map";
     case Value.Type.entry:
         return "entry";
+    case Value.Type.entryList:
+        return "list";
     case Value.Type.duration:
         return "google.protobuf.Duration";
     case Value.Type.timestamp:
@@ -2341,6 +2395,72 @@ unittest
     evaluate(`type(duration("PT1H"))`, emptyContext()).should.be(value("google.protobuf.Duration"));
     evaluate(`type(timestamp("2023-01-15T12:00:00Z"))`, emptyContext()).should.be(
             value("google.protobuf.Timestamp"));
+}
+
+@("Eval: EntryList lazy list")
+unittest
+{
+    import dshould;
+
+    // Create a lazy list backed by EntryList
+    class RangeList : EntryList
+    {
+        long start;
+        long count;
+        this(long s, long c)
+        {
+            start = s;
+            count = c;
+        }
+
+        override size_t length()
+        {
+            return cast(size_t) count;
+        }
+
+        override Value index(size_t i)
+        {
+            return value(start + cast(long) i);
+        }
+    }
+
+    auto ctx = contextFrom(["nums": Value(new RangeList(10, 5))]);
+
+    // size()
+    evaluate("size(nums)", ctx).should.be(value(5L));
+    evaluate("nums.size()", ctx).should.be(value(5L));
+
+    // indexing
+    evaluate("nums[0]", ctx).should.be(value(10L));
+    evaluate("nums[4]", ctx).should.be(value(14L));
+    evaluate("nums[2]", ctx).should.be(value(12L));
+
+    // negative indexing
+    evaluate("nums[-1]", ctx).should.be(value(14L));
+
+    // out of range
+    evaluate("nums[5]", ctx).type.should.be(Value.Type.err);
+
+    // in operator
+    evaluate("10 in nums", ctx).should.be(value(true));
+    evaluate("14 in nums", ctx).should.be(value(true));
+    evaluate("15 in nums", ctx).should.be(value(false));
+
+    // type()
+    evaluate("type(nums)", ctx).should.be(value("list"));
+
+    // comprehensions
+    evaluate("nums.all(x, x >= 10)", ctx).should.be(value(true));
+    evaluate("nums.all(x, x > 10)", ctx).should.be(value(false));
+    evaluate("nums.exists(x, x == 12)", ctx).should.be(value(true));
+    evaluate("nums.exists(x, x == 99)", ctx).should.be(value(false));
+    evaluate("nums.exists_one(x, x == 12)", ctx).should.be(value(true));
+    evaluate("nums.map(x, x * 2)", ctx).should.be(value([
+        value(20L), value(22L), value(24L), value(26L), value(28L)
+    ]));
+    evaluate("nums.filter(x, x > 12)", ctx).should.be(value([
+            value(13L), value(14L)
+    ]));
 }
 
 @("Eval: duration/timestamp from context")

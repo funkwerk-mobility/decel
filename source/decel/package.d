@@ -18,7 +18,7 @@
 module decel;
 
 // Value types
-public import decel.value : Value, Entry, value;
+public import decel.value : Value, Entry, EntryList, value;
 
 // Context (variable bindings)
 public import decel.context : Context, contextFrom, emptyContext, bindContext;

@@ -15,6 +15,17 @@ abstract class Entry
     Value resolve(string name);
 }
 
+/// Lazy list — supports indexing and size without materializing.
+/// Subclass to provide virtual array access over large datasets.
+abstract class EntryList
+{
+    /// Number of elements in the list.
+    abstract size_t length();
+
+    /// Retrieve element at the given index (0-based).
+    abstract Value index(size_t i);
+}
+
 /// A CEL value: the runtime representation of any CEL expression result.
 struct Value
 {
@@ -31,6 +42,7 @@ struct Value
         list,
         map,
         entry,
+        entryList,
         duration,
         timestamp,
         err,
@@ -46,6 +58,7 @@ struct Value
             Value[], // list
             Value[string], // map (string-keyed)
             Entry, // entry (lazy)
+            EntryList, // entryList (lazy list)
             Duration, // duration
             SysTime, // timestamp
             Err, // err
@@ -92,7 +105,8 @@ struct Value
                 (ref ulong _) => Type.uint_, (ref double _) => Type.double_,
                 (ref string _) => Type.string_, (ref immutable(ubyte)[] _) => Type.bytes_,
                 (ref Value[] _) => Type.list, (ref Value[string] _) => Type.map,
-                (ref Entry _) => Type.entry, (ref Duration _) => Type.duration,
+                (ref Entry _) => Type.entry, (ref EntryList _) => Type.entryList,
+                (ref Duration _) => Type.duration,
                 (ref SysTime _) => Type.timestamp, (ref Err _) => Type.err,);
     }
 
@@ -240,6 +254,20 @@ private bool valueEquals(const Value a, const Value b)
         auto sa = ma.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
         auto sb = mb.inner.match!((ref SysTime v) => v.toUnixTime(), (ref _) => long.min);
         return sa == sb;
+    }
+
+    if (ta == Value.Type.entryList && tb == Value.Type.entryList)
+    {
+        auto la = ma.inner.match!((ref EntryList v) => v, (ref _) => null);
+        auto lb = mb.inner.match!((ref EntryList v) => v, (ref _) => null);
+        if (la is null || lb is null)
+            return false;
+        if (la.length != lb.length)
+            return false;
+        foreach (i; 0 .. la.length)
+            if (!valueEquals(la.index(i), lb.index(i)))
+                return false;
+        return true;
     }
 
     return false;

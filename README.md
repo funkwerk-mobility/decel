@@ -185,6 +185,32 @@ evaluate(`has(request.auth)`, ctx);            // true
 evaluate(`has(request.missing)`, ctx);         // false
 ```
 
+## Lazy Lists via EntryList
+
+For large datasets, subclass `EntryList` to provide lazy indexing and size
+without materializing an array:
+
+```d
+class DatabaseRows : EntryList
+{
+    override size_t length() { return 1_000_000; }
+
+    override Value index(size_t i)
+    {
+        // Fetch row i on demand
+        return value(cast(long) i);
+    }
+}
+
+auto ctx = contextFrom(["rows": Value(new DatabaseRows())]);
+evaluate("rows[42]", ctx);            // fetches only row 42
+evaluate("size(rows)", ctx);           // 1000000 (no materialization)
+evaluate("rows.exists(r, r == 42)", ctx);  // iterates lazily
+```
+
+`EntryList` supports `size()`, `[index]`, `in`, and all comprehensions
+(`.all()`, `.exists()`, `.filter()`, `.map()`, etc.).
+
 ## Error Handling
 
 Parse errors (syntax errors, unexpected tokens) throw `EvalException`:
