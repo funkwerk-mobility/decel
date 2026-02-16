@@ -45,9 +45,10 @@ auto ctx = contextFrom([
 auto allowed = evaluate(`role == "admin" || level >= 10`, ctx);
 assert(allowed == value(true));
 
-// Extract D types from results
+// Extract D types from results (throws on type mismatch or error)
 auto n = evaluate(`2 + 3`, emptyContext()).get!long;    // 5
 auto s = evaluate(`"hi"`, emptyContext()).get!string;    // "hi"
+// .get!T throws Exception if the Value holds a different type or is an error
 
 // Check for errors
 auto err = evaluate(`1 / 0`, emptyContext());
