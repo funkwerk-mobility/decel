@@ -772,15 +772,15 @@ private Value evalFunction(string name, Value[] args, size_t pos)
     case "int":
         if (args.length != 1)
             throw new EvalException("int() takes exactly 1 argument", pos);
-        return evalIntCast(args[0]);
+        return evalNumericCast!long(args[0], "int");
     case "uint":
         if (args.length != 1)
             throw new EvalException("uint() takes exactly 1 argument", pos);
-        return evalUintCast(args[0]);
+        return evalNumericCast!ulong(args[0], "uint");
     case "double":
         if (args.length != 1)
             throw new EvalException("double() takes exactly 1 argument", pos);
-        return evalDoubleCast(args[0]);
+        return evalNumericCast!double(args[0], "double");
     case "string":
         if (args.length != 1)
             throw new EvalException("string() takes exactly 1 argument", pos);
@@ -812,15 +812,27 @@ private Value evalMethod(Value obj, string name, Value[] args)
     case "contains":
         if (args.length != 1)
             return Value.err(".contains() takes exactly 1 argument");
-        return evalContains(obj, args[0]);
+        return evalStringMethod("contains", obj, args[0], (s, a) {
+            import std.algorithm : canFind;
+
+            return s.canFind(a);
+        });
     case "startsWith":
         if (args.length != 1)
             return Value.err(".startsWith() takes exactly 1 argument");
-        return evalStartsWith(obj, args[0]);
+        return evalStringMethod("startsWith", obj, args[0], (s, a) {
+            import std.algorithm : startsWith;
+
+            return s.startsWith(a);
+        });
     case "endsWith":
         if (args.length != 1)
             return Value.err(".endsWith() takes exactly 1 argument");
-        return evalEndsWith(obj, args[0]);
+        return evalStringMethod("endsWith", obj, args[0], (s, a) {
+            import std.algorithm : endsWith;
+
+            return s.endsWith(a);
+        });
     case "matches":
         if (args.length != 1)
             return Value.err(".matches() takes exactly 1 argument");
@@ -863,34 +875,18 @@ private Value evalSize(Value v)
     return Value.err("size() not supported for " ~ typeName(v));
 }
 
-private Value evalContains(Value obj, Value arg)
+/// Shared implementation for binary string methods (.contains, .startsWith, .endsWith).
+private Value evalStringMethod(string name, Value obj, Value arg, bool delegate(string, string) fn)
 {
-    import std.algorithm : canFind;
-
     if (isErr(obj))
         return obj;
     if (isErr(arg))
         return arg;
     auto s = tryGet!string(obj);
-    auto sub = tryGet!string(arg);
-    if (!s.isNull && !sub.isNull)
-        return Value(s.get.canFind(sub.get));
-    return Value.err(".contains() requires string arguments");
-}
-
-private Value evalStartsWith(Value obj, Value arg)
-{
-    import std.algorithm : startsWith;
-
-    if (isErr(obj))
-        return obj;
-    if (isErr(arg))
-        return arg;
-    auto s = tryGet!string(obj);
-    auto pre = tryGet!string(arg);
-    if (!s.isNull && !pre.isNull)
-        return Value(s.get.startsWith(pre.get));
-    return Value.err(".startsWith() requires string arguments");
+    auto a = tryGet!string(arg);
+    if (!s.isNull && !a.isNull)
+        return Value(fn(s.get, a.get));
+    return Value.err("." ~ name ~ "() requires string arguments");
 }
 
 private Value evalMatches(Value obj, Value arg)
@@ -922,91 +918,36 @@ private Value evalMatches(Value obj, Value arg)
     }
 }
 
-private Value evalEndsWith(Value obj, Value arg)
-{
-    import std.algorithm : endsWith;
-
-    if (isErr(obj))
-        return obj;
-    if (isErr(arg))
-        return arg;
-    auto s = tryGet!string(obj);
-    auto suf = tryGet!string(arg);
-    if (!s.isNull && !suf.isNull)
-        return Value(s.get.endsWith(suf.get));
-    return Value.err(".endsWith() requires string arguments");
-}
-
-private Value evalIntCast(Value v)
+/// Generic numeric cast: int(), uint(), double().
+/// Tries direct match, cross-numeric casts, then string parsing.
+private Value evalNumericCast(T)(Value v, string targetName)
 {
     if (isErr(v))
         return v;
+    // Direct match — no conversion needed.
+    auto direct = tryGet!T(v);
+    if (!direct.isNull)
+        return Value(direct.get);
+    // Cross-numeric casts.
     auto i = tryGet!long(v);
     if (!i.isNull)
-        return Value(i.get);
+        return Value(cast(T) i.get);
     auto u = tryGet!ulong(v);
     if (!u.isNull)
-        return Value(cast(long) u.get);
+        return Value(cast(T) u.get);
     auto d = tryGet!double(v);
     if (!d.isNull)
-        return Value(cast(long) d.get);
+        return Value(cast(T) d.get);
+    // String parsing.
     auto s = tryGet!string(v);
     if (!s.isNull)
     {
         try
-            return Value(s.get.to!long);
+            return Value(s.get.to!T);
         catch (ConvException)
-            return Value.err("cannot convert string to int: " ~ s.get);
+            return Value.err("cannot convert string to " ~ targetName ~ ": " ~ s.get);
     }
-    return Value.err("cannot convert " ~ typeName(v) ~ " to int");
-}
-
-private Value evalUintCast(Value v)
-{
-    if (isErr(v))
-        return v;
-    auto i = tryGet!long(v);
-    if (!i.isNull)
-        return Value(cast(ulong) i.get);
-    auto u = tryGet!ulong(v);
-    if (!u.isNull)
-        return Value(u.get);
-    auto d = tryGet!double(v);
-    if (!d.isNull)
-        return Value(cast(ulong) d.get);
-    auto s = tryGet!string(v);
-    if (!s.isNull)
-    {
-        try
-            return Value(s.get.to!ulong);
-        catch (ConvException)
-            return Value.err("cannot convert string to uint: " ~ s.get);
-    }
-    return Value.err("cannot convert " ~ typeName(v) ~ " to uint");
-}
-
-private Value evalDoubleCast(Value v)
-{
-    if (isErr(v))
-        return v;
-    auto i = tryGet!long(v);
-    if (!i.isNull)
-        return Value(cast(double) i.get);
-    auto u = tryGet!ulong(v);
-    if (!u.isNull)
-        return Value(cast(double) u.get);
-    auto d = tryGet!double(v);
-    if (!d.isNull)
-        return Value(d.get);
-    auto s = tryGet!string(v);
-    if (!s.isNull)
-    {
-        try
-            return Value(s.get.to!double);
-        catch (ConvException)
-            return Value.err("cannot convert string to double: " ~ s.get);
-    }
-    return Value.err("cannot convert " ~ typeName(v) ~ " to double");
+    return Value.err("cannot convert " ~ typeName(v) ~ " to " ~ targetName);
 }
 
 private Value evalStringCast(Value v)
