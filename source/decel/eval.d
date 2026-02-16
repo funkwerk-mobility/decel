@@ -527,6 +527,10 @@ private Value evalBinary(Token.Kind op, Value lhs, Value rhs)
     if (isErr(rhs))
         return rhs;
 
+    // Entry.asValue() unwrapping — let entries participate in binary ops
+    lhs = unwrapEntry(lhs);
+    rhs = unwrapEntry(rhs);
+
     // Null equality: null == null → true, null != X → true
     if (lhs.type == Value.Type.null_ || rhs.type == Value.Type.null_)
     {
@@ -649,6 +653,7 @@ private Value evalUnaryMinus(Value operand)
 {
     if (isErr(operand))
         return operand;
+    operand = unwrapEntry(operand);
     auto i = tryGet!long(operand);
     if (!i.isNull)
         return Value(-i.get);
@@ -665,6 +670,7 @@ private Value evalUnaryNot(Value operand)
 {
     if (isErr(operand))
         return operand;
+    operand = unwrapEntry(operand);
     auto b = tryGet!bool(operand);
     if (!b.isNull)
         return Value(!b.get);
@@ -701,6 +707,20 @@ private Value evalIn(Value lhs, Value rhs)
     if (!rm.isNull && !ls.isNull)
     {
         return Value((ls.get in rm.get) !is null);
+    }
+
+    // Entry.asList() fallback for list membership
+    auto re = tryGet!Entry(rhs);
+    if (!re.isNull)
+    {
+        auto el = re.get.asList();
+        if (el !is null)
+        {
+            foreach (i; 0 .. el.length)
+                if (el.index(i) == lhs)
+                    return Value(true);
+            return Value(false);
+        }
     }
 
     return Value.err("unsupported 'in' for types " ~ typeName(lhs) ~ " and " ~ typeName(rhs));
@@ -751,6 +771,33 @@ private Value evalIndex(Value obj, Value index)
         if (auto p = ik.get in im.get)
             return *p;
         return Value.err("no such key: " ~ ik.get);
+    }
+
+    // Entry.asList() fallback for integer indexing
+    if (!idxVal.isNull)
+    {
+        auto entryVal = tryGet!Entry(obj);
+        if (!entryVal.isNull)
+        {
+            auto el = entryVal.get.asList();
+            if (el !is null)
+            {
+                auto idx = idxVal.get;
+                if (idx < 0)
+                    idx += cast(long) el.length;
+                if (idx < 0 || idx >= cast(long) el.length)
+                    return Value.err("index out of range");
+                return el.index(cast(size_t) idx);
+            }
+        }
+    }
+
+    // Entry string-key indexing (like map access)
+    if (!ik.isNull)
+    {
+        auto entryVal = tryGet!Entry(obj);
+        if (!entryVal.isNull)
+            return entryVal.get.resolve(ik.get);
     }
 
     return Value.err("cannot index " ~ typeName(obj));
@@ -879,6 +926,14 @@ private Value evalSize(Value v)
     auto m = tryGet!(Value[string])(v);
     if (!m.isNull)
         return Value(cast(long) m.get.length);
+    // Entry.asList() fallback
+    auto e = tryGet!Entry(v);
+    if (!e.isNull)
+    {
+        auto el = e.get.asList();
+        if (el !is null)
+            return Value(cast(long) el.length);
+    }
     return Value.err("size() not supported for " ~ typeName(v));
 }
 
@@ -1223,6 +1278,7 @@ private Value evalBody(ref TokenRange r, const Env env, Context ctx,
 
 /// Extract a List from a comprehension target, consuming args on error.
 /// Returns null on error (caller should return the appropriate error Value).
+/// Also checks Entry.asList() for entries that double as lists.
 private Nullable!List extractListTarget(Value target, ref TokenRange r, const Env env, Context ctx)
 {
     if (isErr(target))
@@ -1233,6 +1289,14 @@ private Nullable!List extractListTarget(Value target, ref TokenRange r, const En
     auto list = tryGet!List(target);
     if (!list.isNull)
         return list;
+    // Entry.asList() fallback
+    auto entry = tryGet!Entry(target);
+    if (!entry.isNull)
+    {
+        auto el = entry.get.asList();
+        if (el !is null)
+            return nullable(el);
+    }
     cast(void) parseComprehensionArgs(r, env, ctx);
     return Nullable!List.init;
 }
@@ -1680,6 +1744,20 @@ private string formatRFC3339(SysTime st)
 }
 
 // ── Value helpers ───────────────────────────────────────────────────
+
+/// Unwrap an Entry to its scalar value via asValue(), if available.
+/// Returns the original value unchanged if not an Entry or no asValue().
+private Value unwrapEntry(Value v)
+{
+    auto e = tryGet!Entry(v);
+    if (!e.isNull)
+    {
+        auto av = e.get.asValue();
+        if (!av.isNull)
+            return av.get;
+    }
+    return v;
+}
 
 private Nullable!T tryGet(T)(Value v)
 {
@@ -2403,6 +2481,150 @@ unittest
     import dshould;
 
     evaluate(`now(1)`, emptyContext()).should.throwA!EvalException;
+}
+
+@("Eval: Entry.asList() — entry that acts as a list")
+unittest
+{
+    import dshould;
+
+    // An Entry that is also a List (via asList())
+    class MetricEntry : Entry
+    {
+        Value[] data;
+
+        this(Value[] d)
+        {
+            data = d;
+        }
+
+        override Value resolve(string name)
+        {
+            if (name == "name")
+                return value("cpu_usage");
+            return Value.err("no such field: " ~ name);
+        }
+
+        override List asList()
+        {
+            return new ArrayList(data);
+        }
+    }
+
+    auto entry = new MetricEntry([value(10L), value(20L), value(30L)]);
+    auto ctx = contextFrom(["metric": Value(cast(Entry) entry)]);
+
+    // Can access fields as an Entry
+    evaluate(`metric.name`, ctx).should.be(value("cpu_usage"));
+    evaluate(`has(metric.name)`, ctx).should.be(value(true));
+    evaluate(`has(metric.missing)`, ctx).should.be(value(false));
+
+    // Can use as a list via asList()
+    evaluate(`size(metric)`, ctx).should.be(value(3L));
+    evaluate(`metric[0]`, ctx).should.be(value(10L));
+    evaluate(`metric[2]`, ctx).should.be(value(30L));
+    evaluate(`metric[-1]`, ctx).should.be(value(30L));
+    evaluate(`20 in metric`, ctx).should.be(value(true));
+    evaluate(`99 in metric`, ctx).should.be(value(false));
+
+    // Comprehensions work
+    evaluate(`metric.all(x, x > 0)`, ctx).should.be(value(true));
+    evaluate(`metric.all(x, x > 15)`, ctx).should.be(value(false));
+    evaluate(`metric.exists(x, x == 20)`, ctx).should.be(value(true));
+    evaluate(`metric.map(x, x * 2)`, ctx).should.be(value([
+        value(20L), value(40L), value(60L)
+    ]));
+    evaluate(`metric.filter(x, x > 15)`, ctx).should.be(value([
+        value(20L), value(30L)
+    ]));
+}
+
+@("Eval: Entry.asValue() — entry that unwraps to a scalar")
+unittest
+{
+    import dshould;
+    import std.typecons : Nullable, nullable;
+
+    // An Entry that has a scalar value and named fields
+    class GaugeEntry : Entry
+    {
+        double currentValue;
+        string label;
+
+        this(double v, string l)
+        {
+            currentValue = v;
+            label = l;
+        }
+
+        override Value resolve(string name)
+        {
+            if (name == "label")
+                return value(label);
+            return Value.err("no such field: " ~ name);
+        }
+
+        override Nullable!Value asValue()
+        {
+            return nullable(value(currentValue));
+        }
+    }
+
+    auto gauge = new GaugeEntry(42.5, "cpu");
+    auto ctx = contextFrom(["gauge": Value(cast(Entry) gauge)]);
+
+    // Can access fields
+    evaluate(`gauge.label`, ctx).should.be(value("cpu"));
+
+    // Unwraps to scalar in arithmetic/comparison
+    evaluate(`gauge + 1.0`, ctx).should.be(value(43.5));
+    evaluate(`gauge > 40.0`, ctx).should.be(value(true));
+    evaluate(`gauge < 50.0`, ctx).should.be(value(true));
+    evaluate(`gauge == 42.5`, ctx).should.be(value(true));
+    evaluate(`-gauge`, ctx).should.be(value(-42.5));
+}
+
+@("Eval: Entry with both asList() and asValue()")
+unittest
+{
+    import dshould;
+    import std.typecons : Nullable, nullable;
+
+    // An Entry that has fields, acts as a list, AND has a scalar value
+    class RichEntry : Entry
+    {
+        override Value resolve(string name)
+        {
+            if (name == "description")
+                return value("test metric");
+            return Value.err("no such field: " ~ name);
+        }
+
+        override List asList()
+        {
+            return new ArrayList([value(1L), value(2L), value(3L)]);
+        }
+
+        override Nullable!Value asValue()
+        {
+            return nullable(value(6L)); // sum
+        }
+    }
+
+    auto rich = new RichEntry();
+    auto ctx = contextFrom(["m": Value(cast(Entry) rich)]);
+
+    // Fields work
+    evaluate(`m.description`, ctx).should.be(value("test metric"));
+
+    // List operations work
+    evaluate(`size(m)`, ctx).should.be(value(3L));
+    evaluate(`m[0]`, ctx).should.be(value(1L));
+    evaluate(`m.all(x, x > 0)`, ctx).should.be(value(true));
+
+    // Scalar unwrapping works in arithmetic
+    evaluate(`m + 4`, ctx).should.be(value(10L));
+    evaluate(`m > 5`, ctx).should.be(value(true));
 }
 
 @("Eval: duration/timestamp from context")

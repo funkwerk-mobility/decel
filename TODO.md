@@ -40,6 +40,8 @@
 - [x] Null semantics: `null == null` → true, `null != X` → true, null arithmetic → error
 - [x] Cross-type numeric comparison (`1u == 1`, `-1 < 1u`, `1u + 1`, etc.)
 - [x] `now()` function — returns the current time as a timestamp value
+- [x] `Entry.asList()` — entries that double as lists (comprehensions, size, indexing, `in`)
+- [x] `Entry.asValue()` — entries that unwrap to scalars in arithmetic/comparison
 
 ## 🎯 1.0.0 Blockers
 

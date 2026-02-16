@@ -248,6 +248,98 @@ evaluate("size(rows)", ctx);                   // 1000000 (no materialization)
 evaluate("rows.exists(r, r == 42)", ctx);      // iterates lazily
 ```
 
+### Entry as List — `asList()`
+
+Override `asList()` to make an Entry usable in list contexts (comprehensions,
+`size()`, `in`, indexing) while still supporting named field access:
+
+```d
+class MetricSeries : Entry
+{
+    private string _name;
+    private Value[] _dataPoints;
+
+    this(string name, Value[] data)
+    {
+        _name = name;
+        _dataPoints = data;
+    }
+
+    override Value resolve(string name)
+    {
+        switch (name)
+        {
+            case "name": return value(_name);
+            default:     return Value.err("no such field: " ~ name);
+        }
+    }
+
+    override List asList()
+    {
+        return new ArrayList(_dataPoints);
+    }
+}
+
+auto series = new MetricSeries("cpu_usage", [value(10L), value(20L), value(30L)]);
+auto ctx = contextFrom(["metric": Value(cast(Entry) series)]);
+
+// Field access still works
+evaluate(`metric.name`, ctx);                    // "cpu_usage"
+
+// List operations work via asList()
+evaluate(`size(metric)`, ctx);                   // 3
+evaluate(`metric[0]`, ctx);                      // 10
+evaluate(`20 in metric`, ctx);                   // true
+evaluate(`metric.filter(x, x > 15)`, ctx);       // [20, 30]
+evaluate(`metric.all(x, x > 0)`, ctx);           // true
+```
+
+### Entry as Scalar — `asValue()`
+
+Override `asValue()` to let an Entry unwrap to a scalar value in
+arithmetic and comparison contexts:
+
+```d
+class Gauge : Entry
+{
+    private double _value;
+    private string _unit;
+
+    this(double v, string unit)
+    {
+        _value = v;
+        _unit = unit;
+    }
+
+    override Value resolve(string name)
+    {
+        switch (name)
+        {
+            case "unit": return value(_unit);
+            default:     return Value.err("no such field: " ~ name);
+        }
+    }
+
+    override Nullable!Value asValue()
+    {
+        import std.typecons : nullable;
+        return nullable(value(_value));
+    }
+}
+
+auto gauge = new Gauge(42.5, "percent");
+auto ctx = contextFrom(["cpu": Value(cast(Entry) gauge)]);
+
+evaluate(`cpu.unit`, ctx);          // "percent"
+evaluate(`cpu > 40.0`, ctx);        // true
+evaluate(`cpu + 7.5`, ctx);         // 50.0
+evaluate(`cpu == 42.5`, ctx);       // true
+```
+
+Both `asList()` and `asValue()` can be overridden on the same Entry,
+giving you a value that has named fields, acts as a list, and participates
+in arithmetic.
+
 ### Combining Entry and List
 
 For real-world data models, nest Entry and List to expose a complete

@@ -11,10 +11,28 @@ import std.typecons : Nullable;
 import decel.exception : EvalException;
 
 /// Lazy value resolution. Subclass to provide deferred/lazy field access.
+///
+/// Override `asList()` to make this entry usable in list contexts
+/// (comprehensions, `size()`, `in`, indexing). Override `asValue()` to
+/// make it unwrap to a scalar in arithmetic/comparison contexts.
 abstract class Entry
 {
     /// Resolve a named field on this entry.
     Value resolve(string name);
+
+    /// If this entry can act as a list, return it. Default: null.
+    List asList()
+    {
+        return null;
+    }
+
+    /// If this entry has an underlying scalar value, return it. Default: null.
+    import std.typecons : Nullable;
+
+    Nullable!Value asValue()
+    {
+        return Nullable!Value.init;
+    }
 }
 
 /// Abstract list — supports indexing and size without materializing.
